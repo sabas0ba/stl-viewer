@@ -7,9 +7,10 @@
 - 開発環境は <https://github.com/sabas0ba/dotfiles> の nix / コンテナ環境を基準とする。
   本リポジトリには最小構成の `flake.nix` を同梱している (`nix develop` で node 22 と
   playwright 用 Chromium が入る)。dotfiles 側の環境を使う場合もそちらを優先してよい。
-- `flake.lock` は未生成である。初回に `nix flake update` を実行してコミットすること。
-- `package-lock.json` も未生成である。初回に `npm install` を実行してコミットすること
-  (生成環境にレジストリ接続がなかったため)。
+- `package-lock.json` は生成済みである (playwright 1.56.0)。依存を変更した場合は
+  `npm install` の結果を一緒にコミットすること。
+- `flake.lock` は未生成である。nix を使う環境で一度 `nix flake update` を実行して
+  コミットすること (生成環境に nix がなかったため)。
 
 ## このリポジトリの構成
 

@@ -97,11 +97,10 @@ nix を使う場合は `nix develop` で node 22 と結合テスト用 Chromium 
 
 ### 初回に必要な作業
 
-生成環境に npm レジストリと nix への接続がなかったため、以下のロックファイルを同梱していない。
-最初のクローン後に一度だけ実行してコミットすること。
+`package-lock.json` は生成済みである。nix を使う場合のみ、`flake.lock` が未生成のため
+一度だけ以下を実行してコミットすること (生成環境に nix がなかった)。
 
 ```sh
-npm install        # package-lock.json を生成 (結合テスト用の playwright 1.56.0)
 nix flake update   # flake.lock を生成 (nix を使う場合のみ)
 ```
 
