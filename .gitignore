@@ -1,0 +1,4 @@
+dist/shots/
+test/fixtures/sphere-big.stl
+test/x.mjs
+node_modules/

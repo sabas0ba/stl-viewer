@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>STL Viewer - 3D プリント前チェック</title>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">STL Viewer<span class="sub">3D プリント前チェック</span></div>
+    <div class="tb-group">
+      <button id="btn-open" class="btn primary">STL を開く</button>
+      <input type="file" id="file-input" accept=".stl,model/stl" multiple hidden>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label">表示</label>
+      <button class="btn seg" id="btn-layout-single" data-layout="single">単画面</button>
+      <button class="btn seg" id="btn-layout-quad" data-layout="quad">3 面図</button>
+    </div>
+    <div class="tb-group" id="view-preset-group">
+      <label class="tb-label">視点</label>
+      <select id="sel-view">
+        <option value="iso">等角</option>
+        <option value="front">正面</option>
+        <option value="back">背面</option>
+        <option value="right">右側面</option>
+        <option value="left">左側面</option>
+        <option value="top">平面</option>
+        <option value="bottom">底面</option>
+      </select>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label">シェーディング</label>
+      <select id="sel-shade">
+        <option value="0">単色</option>
+        <option value="1">オーバーハング</option>
+        <option value="2">高さ</option>
+      </select>
+    </div>
+    <div class="tb-group right">
+      <button class="btn" id="btn-fit">全体表示</button>
+      <button class="btn" id="btn-png">PNG 保存</button>
+      <button class="btn" id="btn-export">STL 書き出し</button>
+      <button class="btn" id="btn-report">レポート</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="left">
+      <div class="panel-title">パーツ<span id="part-count" class="badge">0</span></div>
+      <div id="part-list"></div>
+      <div id="drop-hint" class="drop-hint">
+        STL ファイルをここにドロップ<br><span>複数ファイル可 / binary・ASCII 対応</span>
+      </div>
+      <div class="panel-title">警告</div>
+      <div id="warnings" class="warnings">-</div>
+    </aside>
+
+    <div id="viewport">
+      <canvas id="gl"></canvas>
+      <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="mode-hint" class="mode-hint" hidden></div>
+      <div id="busy" class="busy" hidden><span></span></div>
+    </div>
+
+    <aside id="right">
+      <nav class="tabs">
+        <button class="tab active" data-tab="measure">計測</button>
+        <button class="tab" data-tab="display">表示</button>
+        <button class="tab" data-tab="section">断面</button>
+        <button class="tab" data-tab="orient">向き</button>
+        <button class="tab" data-tab="place">配置</button>
+      </nav>
+
+      <section class="tabpanel" data-panel="measure">
+        <div class="panel-title">対象<span id="measure-target" class="hint">シーン全体</span></div>
+        <table class="kv" id="tbl-dims"></table>
+        <div class="panel-title">品質</div>
+        <table class="kv" id="tbl-quality"></table>
+        <div class="panel-title">材料</div>
+        <div class="row">
+          <select id="sel-material"></select>
+          <span id="mass-out" class="mono">-</span>
+        </div>
+        <div class="row">
+          <label>充填率 %</label>
+          <input type="number" id="in-infill" value="100" min="1" max="100" step="1">
+        </div>
+        <div class="panel-title">スケール</div>
+        <div class="row">
+          <label>倍率</label>
+          <input type="number" id="in-scale" value="100" min="0.1" step="1"> %
+          <button class="btn sm" id="btn-scale-apply">適用</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-inch">inch → mm (×25.4)</button>
+          <button class="btn sm" id="btn-scale-reset">等倍に戻す</button>
+        </div>
+        <div class="row">
+          <label>目標寸法</label>
+          <select id="sel-fit-axis"><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
+          <input type="number" id="in-fit-size" step="0.1" placeholder="mm">
+          <button class="btn sm" id="btn-fit-size">合わせる</button>
+        </div>
+        <div class="panel-title">2 点間計測</div>
+        <div class="row">
+          <button class="btn sm" id="btn-measure">計測を開始</button>
+          <button class="btn sm" id="btn-measure-clear">消去</button>
+        </div>
+        <table class="kv" id="tbl-measure"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="display" hidden>
+        <div class="panel-title">オーバーハング</div>
+        <div class="row">
+          <label>しきい値</label>
+          <input type="range" id="in-overhang" min="10" max="80" step="1" value="45">
+          <span id="overhang-val" class="mono">45°</span>
+        </div>
+        <table class="kv" id="tbl-overhang"></table>
+        <div class="row"><button class="btn sm" id="btn-overhang-calc">面積を集計</button></div>
+        <div class="panel-title">表示要素</div>
+        <div class="checks">
+          <label><input type="checkbox" id="chk-bed" checked> ビルドプレート</label>
+          <label><input type="checkbox" id="chk-dims" checked> 寸法</label>
+          <label><input type="checkbox" id="chk-bbox" checked> 外形ボックス</label>
+          <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
+          <label><input type="checkbox" id="chk-xray"> 透過表示</label>
+          <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
+        </div>
+        <div class="panel-title">ビルドプレート</div>
+        <div class="row">
+          <label>X</label><input type="number" id="in-bed-x" value="220" min="10" step="1">
+          <label>Y</label><input type="number" id="in-bed-y" value="220" min="10" step="1">
+          <label>Z</label><input type="number" id="in-bed-z" value="250" min="10" step="1">
+        </div>
+        <div class="row">
+          <select id="sel-printer"></select>
+        </div>
+      </section>
+
+      <section class="tabpanel" data-panel="section" hidden>
+        <div class="panel-title">クリップ平面</div>
+        <div id="clip-controls"></div>
+        <div class="row">
+          <label><input type="checkbox" id="chk-cap" checked> 切断面を塞ぐ</label>
+        </div>
+        <div class="panel-title">断面輪郭</div>
+        <div class="row">
+          <label>軸</label>
+          <select id="sel-slice-axis"><option value="2">Z</option><option value="0">X</option><option value="1">Y</option></select>
+          <label>位置</label>
+          <input type="number" id="in-slice-pos" step="0.5" value="1">
+          <button class="btn sm" id="btn-slice">計算</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-slice-prev">− 1 層</button>
+          <input type="number" id="in-slice-step" value="0.2" step="0.05" style="width:70px">
+          <button class="btn sm" id="btn-slice-next">+ 1 層</button>
+        </div>
+        <canvas id="slice-canvas" width="320" height="320"></canvas>
+        <table class="kv" id="tbl-slice"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="orient" hidden>
+        <div class="panel-title">回転</div>
+        <div class="rot-grid">
+          <button class="btn sm" data-rot="x,-90">X −90°</button>
+          <button class="btn sm" data-rot="x,90">X +90°</button>
+          <button class="btn sm" data-rot="y,-90">Y −90°</button>
+          <button class="btn sm" data-rot="y,90">Y +90°</button>
+          <button class="btn sm" data-rot="z,-90">Z −90°</button>
+          <button class="btn sm" data-rot="z,90">Z +90°</button>
+        </div>
+        <div class="row">
+          <select id="sel-rot-axis"><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
+          <input type="number" id="in-rot-angle" value="15" step="1"> °
+          <button class="btn sm" id="btn-rot-apply">回転</button>
+        </div>
+        <div class="row">
+          <label>姿勢 (XYZ°)</label>
+          <input type="number" id="in-eul-x" step="1" style="width:64px">
+          <input type="number" id="in-eul-y" step="1" style="width:64px">
+          <input type="number" id="in-eul-z" step="1" style="width:64px">
+          <button class="btn sm" id="btn-eul-apply">設定</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-lay">面をベッドに接地</button>
+          <button class="btn sm" id="btn-drop">ベッドに落とす</button>
+          <button class="btn sm" id="btn-rot-reset">回転をリセット</button>
+        </div>
+        <div class="panel-title">自動姿勢探索</div>
+        <div class="row">
+          <button class="btn sm" id="btn-auto-orient">候補を探索</button>
+          <span class="hint">要サポート面積と造形高さで評価</span>
+        </div>
+        <table class="kv" id="tbl-orient"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="place" hidden>
+        <div class="panel-title">位置</div>
+        <div class="row">
+          <label>X</label><input type="number" id="in-pos-x" step="1">
+          <label>Y</label><input type="number" id="in-pos-y" step="1">
+          <button class="btn sm" id="btn-pos-apply">移動</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-center">ベッド中央へ</button>
+          <button class="btn sm" id="btn-arrange">自動整列</button>
+        </div>
+        <div class="row">
+          <label>間隔 mm</label><input type="number" id="in-margin" value="5" min="0" step="1">
+        </div>
+        <div class="panel-title">パーツ操作</div>
+        <div class="row">
+          <button class="btn sm" id="btn-duplicate">複製</button>
+          <button class="btn sm" id="btn-delete">削除</button>
+          <button class="btn sm" id="btn-clear">全消去</button>
+        </div>
+        <div class="panel-title">干渉・領域チェック</div>
+        <div class="row"><button class="btn sm" id="btn-collide">チェック実行</button></div>
+        <table class="kv" id="tbl-collide"></table>
+      </section>
+    </aside>
+  </main>
+
+  <footer id="status">
+    <span id="status-msg">STL ファイルを開いてください。</span>
+    <span id="status-right" class="mono"></span>
+  </footer>
+</div>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
