@@ -375,6 +375,135 @@ await dlSec.saveAs(join(downloads, 'section.pdf'));
 const secText = readFileSync(join(downloads, 'section.pdf'), 'utf8');
 check('断面図を PDF に出力できる', /SECTION Z = 3\.00 mm/.test(secText));
 
+// --- 中抜き ---
+await page.setInputFiles('#file-input', [join(here, 'fixtures', 'solid-block.stl')]);
+await page.waitForFunction(() => window.__stlViewer.app.parts.some((p) => p.name === 'solid-block'), null, { timeout: 10000 });
+await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  a.selection = a.parts.find((p) => p.name === 'solid-block').id;
+  V.refreshAll(a);
+});
+await page.click('.tab[data-tab="hollow"]');
+await page.waitForTimeout(200);
+const planText = await page.textContent('#tbl-hollow-plan');
+check('中抜きタブに格子の見込みが出る', /格子間隔/.test(planText) && !/NaN/.test(planText), planText.replace(/\s+/g, ' '));
+
+await page.fill('#in-hollow-wall', '2');
+await page.fill('#in-hollow-top', '2');
+await page.fill('#in-hollow-bottom', '2');
+await page.dispatchEvent('#in-hollow-wall', 'change');
+await page.click('#btn-hollow-run');
+await page.waitForFunction(() => window.__stlViewer.app.parts.some((p) => /中抜き/.test(p.name)), null, { timeout: 60000 });
+await page.waitForTimeout(300);
+const hollowState = await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  const src = a.parts.find((p) => p.name === 'solid-block');
+  const made = a.parts.find((p) => /中抜き/.test(p.name));
+  return {
+    res: a.hollowResult && {
+      solid: a.hollowResult.volume.solid, hollow: a.hollowResult.volume.hollow,
+      inertia: a.hollowResult.sections.minInertiaRatio, tri: a.hollowResult.triangleCount,
+      holes: a.hollowResult.holes.length
+    },
+    srcVisible: src.visible, madeVol: V.partVolume(made), selected: a.selection === made.id,
+    size: made.worldBounds.size, minZ: made.worldBounds.min[2],
+    table: document.querySelector('#tbl-hollow').textContent
+  };
+});
+// 30 x 24 x 20 の中実ブロック (14400 mm3) を壁厚 2mm で抜くと 26 x 20 x 16 = 8320 が空洞になる
+check('中抜きで理論体積どおりに材料が減る',
+  Math.abs(hollowState.res.hollow - 6080) < 6080 * 0.05, JSON.stringify(hollowState.res));
+check('中抜きパーツが追加され元パーツは非表示になる',
+  hollowState.srcVisible === false && hollowState.selected && Math.abs(hollowState.madeVol - hollowState.res.hollow) < 1,
+  JSON.stringify({ srcVisible: hollowState.srcVisible, madeVol: hollowState.madeVol }));
+check('中抜き後も外形と接地位置が変わらない',
+  Math.abs(hollowState.size[0] - 30) < 0.01 && Math.abs(hollowState.size[2] - 20) < 0.01 && Math.abs(hollowState.minZ) < 0.01,
+  JSON.stringify({ size: hollowState.size, minZ: hollowState.minZ }));
+check('結果表に削減量と断面二次モーメント比が出る',
+  /削減量/.test(hollowState.table) && /断面二次モーメント比/.test(hollowState.table) && !/NaN/.test(hollowState.table),
+  hollowState.table.replace(/\s+/g, ' ').slice(0, 200));
+
+await page.click('#btn-hollow-section');
+await page.waitForTimeout(300);
+const clipState = await page.evaluate(() => {
+  const c = window.__stlViewer.app.clips[1];
+  return { enabled: c.enabled, value: c.value };
+});
+check('断面表示で Y 平面のクリップが有効になる', clipState.enabled === true, JSON.stringify(clipState));
+await page.screenshot({ path: join(shots, '10-hollow.png') });
+
+// 全体再構築 + 抜き穴
+await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  const src = a.parts.find((p) => p.name === 'solid-block');
+  src.visible = true;
+  a.selection = src.id;
+  a.clips[1].enabled = false;
+  V.refreshAll(a);
+});
+await page.selectOption('#sel-hollow-mode', 'rebuild');
+await page.selectOption('#sel-hollow-hole', 'bottom');
+await page.fill('#in-hollow-hole-d', '5');
+await page.fill('#in-hollow-hole-n', '1');
+await page.dispatchEvent('#in-hollow-hole-d', 'change');
+await page.click('#btn-hollow-run');
+await page.waitForFunction(() => window.__stlViewer.app.parts.filter((p) => /中抜き/.test(p.name)).length === 2, null, { timeout: 60000 });
+await page.waitForTimeout(300);
+const holeState = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  const made = a.parts.filter((p) => /中抜き/.test(p.name))[1];
+  return {
+    holes: a.hollowResult.holes.length, hollow: a.hollowResult.volume.hollow,
+    shells: made.topology.shells, watertight: made.topology.watertight,
+    warn: document.querySelector('#hollow-warn').textContent
+  };
+});
+check('全体再構築で抜き穴が 1 つ開く', holeState.holes === 1, JSON.stringify(holeState));
+check('抜き穴で空洞が外とつながり 1 シェルになる',
+  holeState.shells === 1 && holeState.watertight, JSON.stringify(holeState));
+await page.screenshot({ path: join(shots, '11-hollow-drain.png') });
+
+// 内部構造 (ジャイロイド)
+await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  const src = a.parts.find((p) => p.name === 'solid-block');
+  a.parts.filter((p) => /中抜き/.test(p.name)).forEach((p) => { p.visible = false; });
+  src.visible = true;
+  a.selection = src.id;
+  V.refreshAll(a);
+});
+await page.selectOption('#sel-hollow-infill', 'gyroid');
+await page.selectOption('#sel-hollow-hole', 'none');
+await page.selectOption('#sel-hollow-mode', 'shell');
+await page.fill('#in-hollow-density', '20');
+await page.fill('#in-hollow-rib', '1.2');
+await page.dispatchEvent('#in-hollow-rib', 'change');
+await page.click('#btn-hollow-run');
+await page.waitForFunction(() => window.__stlViewer.app.parts.filter((p) => /中抜き/.test(p.name)).length === 3, null, { timeout: 90000 });
+await page.waitForTimeout(300);
+const infillState = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return {
+    hollow: a.hollowResult.volume.hollow, inertia: a.hollowResult.sections.minInertiaRatio,
+    period: a.hollowResult.infillPeriod, tri: a.hollowResult.triangleCount
+  };
+});
+// 中空 (6080) より材料が増え、中実 (14400) は超えない
+check('内部構造を入れると中空より材料が増える',
+  infillState.hollow > 6080 && infillState.hollow < 14400 && infillState.period > 5,
+  JSON.stringify(infillState));
+await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  a.clips[2].enabled = true;
+  a.clips[2].value = 12;
+  a.clips[2].ui.chk.checked = true;
+  a.parts.forEach((p) => { p.visible = /中抜き/.test(p.name) && p.id === a.selection; });
+  V.fitView(a);
+  V.refreshAll(a);
+});
+await page.waitForTimeout(400);
+await page.screenshot({ path: join(shots, '12-hollow-infill.png') });
+
 // --- 描画結果が空でないことを確認 ---
 const pix = await page.evaluate(() => {
   const c = document.getElementById('gl');

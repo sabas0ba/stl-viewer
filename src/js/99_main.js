@@ -29,6 +29,8 @@ function createApp() {
     mode: null,
     selection: null,
     slice: null,
+    hollowResult: null,
+    hollowSource: null,
     contourLines: null,
     collisionResult: null,
     lastViewports: null,
@@ -55,7 +57,10 @@ function main() {
     renderDrawingsToPDF: renderDrawingsToPDF, renderDrawingToSVG: renderDrawingToSVG,
     paginateDrawing: paginateDrawing, collectDrawings: collectDrawings,
     printOptions: printOptions, outsideBedXY: outsideBedXY,
-    applyBedChange: applyBedChange, syncBedInputs: syncBedInputs
+    applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
+    hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
+    surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
+    createPart: createPart, filamentLength: filamentLength
   };
   var canvas = document.getElementById('gl');
   try {
@@ -67,6 +72,7 @@ function main() {
   }
   app.overlay = document.getElementById('overlay');
   setupControls(app);
+  setupHollowControls(app);
   setupPrintControls(app);
   setupCanvasInteraction(app);
   app.orbitCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
