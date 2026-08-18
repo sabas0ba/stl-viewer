@@ -77,6 +77,7 @@
         <button class="tab" data-tab="section">断面</button>
         <button class="tab" data-tab="orient">向き</button>
         <button class="tab" data-tab="place">配置</button>
+        <button class="tab" data-tab="print">図面</button>
       </nav>
 
       <section class="tabpanel" data-panel="measure">
@@ -134,15 +135,6 @@
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
-        </div>
-        <div class="panel-title">ビルドプレート</div>
-        <div class="row">
-          <label>X</label><input type="number" id="in-bed-x" value="220" min="10" step="1">
-          <label>Y</label><input type="number" id="in-bed-y" value="220" min="10" step="1">
-          <label>Z</label><input type="number" id="in-bed-z" value="250" min="10" step="1">
-        </div>
-        <div class="row">
-          <select id="sel-printer"></select>
         </div>
       </section>
 
@@ -205,6 +197,31 @@
       </section>
 
       <section class="tabpanel" data-panel="place" hidden>
+        <div class="panel-title">ステージ (造形エリア)<span id="bed-summary" class="hint"></span></div>
+        <div class="row">
+          <label>形状</label>
+          <select id="sel-bed-shape">
+            <option value="rect">矩形</option>
+            <option value="circle">円形</option>
+          </select>
+          <select id="sel-printer"></select>
+        </div>
+        <div class="row" id="row-bed-rect">
+          <label>X</label><input type="number" id="in-bed-x" value="220" min="1" step="1">
+          <label>Y</label><input type="number" id="in-bed-y" value="220" min="1" step="1">
+        </div>
+        <div class="row" id="row-bed-circle" hidden>
+          <label>直径</label><input type="number" id="in-bed-d" value="220" min="1" step="1">
+        </div>
+        <div class="row">
+          <label>高さ Z</label><input type="number" id="in-bed-z" value="250" min="1" step="1">
+          <label>グリッド</label><input type="number" id="in-grid-step" value="10" min="0.5" step="1">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-bed-fit">モデルに合わせる</button>
+          <button class="btn sm" id="btn-bed-reset">既定に戻す</button>
+        </div>
         <div class="panel-title">位置</div>
         <div class="row">
           <label>X</label><input type="number" id="in-pos-x" step="1">
@@ -227,6 +244,63 @@
         <div class="panel-title">干渉・領域チェック</div>
         <div class="row"><button class="btn sm" id="btn-collide">チェック実行</button></div>
         <table class="kv" id="tbl-collide"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="print" hidden>
+        <div class="panel-title">実寸出力 (紙で寸法を確認する)</div>
+        <div class="row">
+          <label>対象</label>
+          <select id="sel-print-target">
+            <option value="selected">選択パーツ</option>
+            <option value="all">表示中のすべて</option>
+          </select>
+        </div>
+        <div class="checks" id="print-views">
+          <label><input type="checkbox" value="front" checked> 正面図 (X-Z)</label>
+          <label><input type="checkbox" value="top" checked> 平面図 (X-Y)</label>
+          <label><input type="checkbox" value="right"> 右側面図 (Y-Z)</label>
+          <label><input type="checkbox" value="bottom"> 底面図 (X-Y)</label>
+          <label><input type="checkbox" value="section"> 断面 (断面タブの軸・位置)</label>
+        </div>
+        <div class="panel-title">用紙</div>
+        <div class="row">
+          <select id="sel-paper"></select>
+          <select id="sel-paper-orient">
+            <option value="portrait">縦</option>
+            <option value="landscape">横</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>余白</label><input type="number" id="in-print-margin" value="10" min="0" step="1" style="width:64px">
+          <label>重ね代</label><input type="number" id="in-print-overlap" value="10" min="0" step="1" style="width:64px">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <label>倍率</label>
+          <select id="sel-print-scale">
+            <option value="1">1:1 (実寸)</option>
+            <option value="0.5">1:2 縮小</option>
+            <option value="0.25">1:4 縮小</option>
+            <option value="2">2:1 拡大</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="chk-print-dims" checked> 寸法線</label>
+          <label><input type="checkbox" id="chk-print-feature"> 稜線 (特徴エッジ) も描く</label>
+          <label><input type="checkbox" id="chk-print-grid"> グリッドを描く</label>
+        </div>
+        <div class="row">
+          <button class="btn primary sm" id="btn-print-pdf">PDF を書き出し</button>
+          <button class="btn sm" id="btn-print-svg">SVG を書き出し</button>
+          <button class="btn sm" id="btn-print-preview">プレビュー</button>
+        </div>
+        <table class="kv" id="tbl-print"></table>
+        <div id="print-preview" class="print-preview" hidden></div>
+        <p class="hint">
+          印刷時は「実際のサイズ / 100%」を選び、用紙に合わせる設定を切ること。
+          各ページ下部の 100 mm 基準線を定規で測れば倍率のずれを確認できる。
+          PDF 内の文字はフォント非埋め込みのため ASCII のみとなる。
+        </p>
       </section>
     </aside>
   </main>

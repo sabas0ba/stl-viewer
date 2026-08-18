@@ -82,21 +82,66 @@ function clipUniformArray(planes) {
   return arr;
 }
 
-function buildGridLines(bed, step) {
+// ステージのグリッド線。円形ステージでは円内に収まる範囲のみ引く
+function buildGridLines(bed, step, shape) {
   var v = [];
-  var s = step || 10;
+  var s = step > 0 ? step : 10;
+  // 線数が過大にならないよう間隔を自動調整する
+  var maxLines = 400;
+  while ((bed[0] / s + bed[1] / s) > maxLines) s *= 2;
+  var strongEvery = s * 5;
   var i;
+  var circle = shape === 'circle';
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2;
+  function spanY(x) {
+    if (!circle) return [0, bed[1]];
+    var dx = x - cx;
+    if (Math.abs(dx) >= r) return null;
+    var h = Math.sqrt(r * r - dx * dx);
+    return [cy - h, cy + h];
+  }
+  function spanX(y) {
+    if (!circle) return [0, bed[0]];
+    var dy = y - cy;
+    if (Math.abs(dy) >= r) return null;
+    var h = Math.sqrt(r * r - dy * dy);
+    return [cx - h, cx + h];
+  }
   for (i = 0; i <= bed[0] + 1e-6; i += s) {
-    var strong = Math.abs(i % 50) < 1e-6;
-    v.push(i, 0, 0, i, bed[1], 0);
-    if (strong) { /* 太線の代替として二重線を引く */ v.push(i + 0.15, 0, 0, i + 0.15, bed[1], 0); }
+    var sy = spanY(i);
+    if (!sy) continue;
+    var strong = Math.abs(i % strongEvery) < 1e-6;
+    v.push(i, sy[0], 0, i, sy[1], 0);
+    if (strong) { /* 太線の代替として二重線を引く */ v.push(i + 0.15, sy[0], 0, i + 0.15, sy[1], 0); }
   }
   for (i = 0; i <= bed[1] + 1e-6; i += s) {
-    var strong2 = Math.abs(i % 50) < 1e-6;
-    v.push(0, i, 0, bed[0], i, 0);
-    if (strong2) { v.push(0, i + 0.15, 0, bed[0], i + 0.15, 0); }
+    var sx = spanX(i);
+    if (!sx) continue;
+    var strong2 = Math.abs(i % strongEvery) < 1e-6;
+    v.push(sx[0], i, 0, sx[1], i, 0);
+    if (strong2) { v.push(sx[0], i + 0.15, 0, sx[1], i + 0.15, 0); }
   }
   return new Float32Array(v);
+}
+
+// 円形ステージの造形可能領域 (円柱) の輪郭
+function buildCylinderLines(bed, segments) {
+  var n = segments || 72;
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2, h = bed[2];
+  var v = [];
+  for (var i = 0; i < n; i++) {
+    var a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    v.push(x0, y0, 0, x1, y1, 0);
+    v.push(x0, y0, h, x1, y1, h);
+  }
+  for (var k = 0; k < 4; k++) {
+    var a = (k / 4) * Math.PI * 2;
+    var x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+    v.push(x, y, 0, x, y, h);
+  }
+  return v;
 }
 
 function buildBoxLines(min, max, out) {
@@ -170,14 +215,16 @@ function drawScene(app, vp, mats, sb) {
     gl.useProgram(R.line.program);
     gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
     if (!R.gridDirty && R.gridBuf.count > 0) { /* 再利用 */ } else {
-      R.gridBuf.upload(buildGridLines(app.bed, 10));
+      R.gridBuf.upload(buildGridLines(app.bed, app.gridStep, app.bedShape));
       R.gridDirty = false;
     }
     gl.uniform4f(R.line.u.uColor, 0.30, 0.34, 0.40, 1);
     gl.bindVertexArray(R.gridBuf.vao);
     gl.drawArrays(gl.LINES, 0, R.gridBuf.count);
     // 造形可能領域の枠
-    var box = buildBoxLines([0, 0, 0], [app.bed[0], app.bed[1], app.bed[2]]);
+    var box = app.bedShape === 'circle'
+      ? buildCylinderLines(app.bed)
+      : buildBoxLines([0, 0, 0], [app.bed[0], app.bed[1], app.bed[2]]);
     R.boxBuf.upload(new Float32Array(box));
     gl.uniform4f(R.line.u.uColor, 0.45, 0.52, 0.62, 1);
     gl.bindVertexArray(R.boxBuf.vao);

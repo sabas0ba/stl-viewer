@@ -8,7 +8,10 @@ var PRINTERS = [
   { name: 'Prusa MK3/MK4 (250 x 210 x 210)', bed: [250, 210, 210] },
   { name: 'Bambu X1/P1 (256 x 256 x 256)', bed: [256, 256, 256] },
   { name: 'Voron 2.4 350 (350 x 350 x 340)', bed: [350, 350, 340] },
-  { name: '光造形 (143 x 89 x 175)', bed: [143, 89, 175] }
+  { name: '光造形 (143 x 89 x 175)', bed: [143, 89, 175] },
+  { name: 'デルタ φ180 x 300', bed: [180, 180, 300], shape: 'circle' },
+  { name: 'デルタ φ250 x 400', bed: [250, 250, 400], shape: 'circle' },
+  { name: 'A4 相当の作業領域 (210 x 297)', bed: [210, 297, 200] }
 ];
 
 function selectedPart(app) {
@@ -209,8 +212,8 @@ function refreshWarnings(app) {
   app.parts.forEach(function (p) {
     if (!p.visible) return;
     var b = p.worldBounds;
-    if (b.min[0] < -0.01 || b.min[1] < -0.01 || b.max[0] > bed[0] + 0.01 || b.max[1] > bed[1] + 0.01) {
-      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ビルドプレート範囲外</span>');
+    if (outsideBedXY(b, bed, app.bedShape)) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ステージ範囲外</span>');
     }
     if (b.max[2] > bed[2] + 0.01) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 造形高さ超過 (' + fmt(b.max[2], 1) + ' mm)</span>');

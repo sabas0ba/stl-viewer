@@ -133,29 +133,70 @@ function setupControls(app) {
     requestRender(app);
   });
 
-  function bedChanged() {
-    app.bed = [
-      Math.max(10, parseFloat($('#in-bed-x').value) || 220),
-      Math.max(10, parseFloat($('#in-bed-y').value) || 220),
-      Math.max(10, parseFloat($('#in-bed-z').value) || 250)
-    ];
-    app.R.gridDirty = true;
-    refreshWarnings(app);
-    requestRender(app);
-  }
-  ['#in-bed-x', '#in-bed-y', '#in-bed-z'].forEach(function (id) {
-    $(id).addEventListener('change', bedChanged);
-  });
+  // --- ステージ (造形エリア) ---
   var pSel = $('#sel-printer');
-  pSel.appendChild(el('option', { value: '-1', text: 'プリセットを選択' }));
+  pSel.appendChild(el('option', { value: '-1', text: 'プリセット' }));
   PRINTERS.forEach(function (pr, idx) { pSel.appendChild(el('option', { value: idx, text: pr.name })); });
   pSel.addEventListener('change', function (ev) {
     var idx = parseInt(ev.target.value, 10);
     if (idx < 0) return;
-    var b = PRINTERS[idx].bed;
-    $('#in-bed-x').value = b[0]; $('#in-bed-y').value = b[1]; $('#in-bed-z').value = b[2];
-    bedChanged();
+    var pr = PRINTERS[idx];
+    app.bedShape = pr.shape || 'rect';
+    app.bed = pr.bed.slice();
+    syncBedInputs(app);
+    applyBedChange(app);
   });
+  $('#sel-bed-shape').addEventListener('change', function () {
+    app.bedShape = $('#sel-bed-shape').value;
+    syncBedInputs(app);
+    readBedInputs(app);
+    applyBedChange(app);
+  });
+  ['#in-bed-x', '#in-bed-y', '#in-bed-z', '#in-bed-d', '#in-grid-step'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      readBedInputs(app);
+      applyBedChange(app);
+    });
+  });
+  $('#btn-bed-fit').addEventListener('click', function () {
+    var b = sceneBounds(app.parts, true);
+    if (!b) { setStatus(app, 'パーツがありません。'); return; }
+    var margin = parseFloat($('#in-margin').value) || 5;
+    if (app.bedShape === 'circle') {
+      var cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+      var r = 0;
+      for (var i = 0; i < 4; i++) {
+        var x = (i & 1) ? b.max[0] : b.min[0], y = (i & 2) ? b.max[1] : b.min[1];
+        r = Math.max(r, Math.hypot(x - cx, y - cy));
+      }
+      var d = Math.ceil((r + margin) * 2);
+      app.bed = [d, d, Math.max(1, Math.ceil(b.max[2] + margin))];
+    } else {
+      app.bed = [
+        Math.max(1, Math.ceil(b.size[0] + margin * 2)),
+        Math.max(1, Math.ceil(b.size[1] + margin * 2)),
+        Math.max(1, Math.ceil(b.max[2] + margin))
+      ];
+    }
+    syncBedInputs(app);
+    applyBedChange(app);
+    // モデルをステージ中央へ寄せる
+    app.parts.forEach(function (p) { if (p.visible) centerPartOnBed(p, app.bed); });
+    if (app.parts.filter(function (p) { return p.visible; }).length > 1) {
+      arrangeParts(app.parts, app.bed, parseFloat($('#in-margin').value) || 5);
+    }
+    fitView(app);
+    refreshAll(app);
+  });
+  $('#btn-bed-reset').addEventListener('click', function () {
+    app.bedShape = 'rect';
+    app.bed = [220, 220, 250];
+    app.gridStep = 10;
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  applyBedFromURL(app);
+  syncBedInputs(app);
 
   // --- 断面タブ ---
   buildClipControls(app);
@@ -393,12 +434,6 @@ function updateClipRanges(app) {
 // 断面輪郭
 // ---------------------------------------------------------------------------
 
-function sliceRotation(axis) {
-  var v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axis];
-  var q = Quat.fromUnitVectors(v, [0, 0, 1]);
-  return M4.compose(M4.create(), [0, 0, 0], q, [1, 1, 1]);
-}
-
 function computeSlice(app) {
   var axis = parseInt($('#sel-slice-axis').value, 10);
   var value = parseFloat($('#in-slice-pos').value) || 0;
@@ -595,8 +630,7 @@ function runCollisionCheck(app) {
   app.parts.forEach(function (p) {
     if (!p.visible) return;
     var b = p.worldBounds;
-    var outside = b.min[0] < -0.01 || b.min[1] < -0.01 || b.max[0] > app.bed[0] + 0.01 ||
-      b.max[1] > app.bed[1] + 0.01 || b.max[2] > app.bed[2] + 0.01;
+    var outside = outsideBedXY(b, app.bed, app.bedShape) || b.max[2] > app.bed[2] + 0.01;
     if (outside) out.push(p.name);
   });
   var hits = res.filter(function (c) { return c.intersect; });
@@ -664,4 +698,80 @@ function exportReport(app) {
   });
   saveBlob(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), 'stl-report.txt');
   setStatus(app, 'レポートを書き出しました。');
+}
+
+// ---------------------------------------------------------------------------
+// ステージ (造形エリア) の設定
+// ---------------------------------------------------------------------------
+
+function readBedInputs(app) {
+  var z = Math.max(1, parseFloat($('#in-bed-z').value) || 250);
+  if (app.bedShape === 'circle') {
+    var d = Math.max(1, parseFloat($('#in-bed-d').value) || 220);
+    app.bed = [d, d, z];
+  } else {
+    app.bed = [
+      Math.max(1, parseFloat($('#in-bed-x').value) || 220),
+      Math.max(1, parseFloat($('#in-bed-y').value) || 220),
+      z
+    ];
+  }
+  app.gridStep = clamp(parseFloat($('#in-grid-step').value) || 10, 0.5, 500);
+}
+
+function syncBedInputs(app) {
+  $('#sel-bed-shape').value = app.bedShape;
+  $('#row-bed-rect').hidden = app.bedShape === 'circle';
+  $('#row-bed-circle').hidden = app.bedShape !== 'circle';
+  $('#in-bed-x').value = fmt(app.bed[0], 1);
+  $('#in-bed-y').value = fmt(app.bed[1], 1);
+  $('#in-bed-d').value = fmt(app.bed[0], 1);
+  $('#in-bed-z').value = fmt(app.bed[2], 1);
+  $('#in-grid-step').value = fmt(app.gridStep, 1);
+  $('#bed-summary').textContent = app.bedShape === 'circle'
+    ? 'φ' + fmt(app.bed[0], 0) + ' × H' + fmt(app.bed[2], 0)
+    : fmt(app.bed[0], 0) + ' × ' + fmt(app.bed[1], 0) + ' × ' + fmt(app.bed[2], 0);
+}
+
+function applyBedChange(app) {
+  app.R.gridDirty = true;
+  syncBedInputs(app);
+  updateBedURL(app);
+  refreshWarnings(app);
+  updateClipRanges(app);
+  requestRender(app);
+}
+
+// ステージ設定を URL に反映する (ブックマークで再現できるようにする)
+function updateBedURL(app) {
+  try {
+    var v = app.bedShape === 'circle'
+      ? 'circle:' + fmt(app.bed[0], 1) + 'x' + fmt(app.bed[2], 1)
+      : fmt(app.bed[0], 1) + 'x' + fmt(app.bed[1], 1) + 'x' + fmt(app.bed[2], 1);
+    var url = new URL(window.location.href);
+    url.searchParams.set('bed', v);
+    if (app.gridStep !== 10) url.searchParams.set('grid', fmt(app.gridStep, 1));
+    else url.searchParams.delete('grid');
+    window.history.replaceState(null, '', url.toString());
+  } catch (e) { /* file:// などで失敗する場合は無視する */ }
+}
+
+function applyBedFromURL(app) {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var bed = params.get('bed');
+    if (bed) {
+      var circle = /^circle:/i.test(bed);
+      var nums = bed.replace(/^circle:/i, '').split(/[x,]/).map(parseFloat).filter(function (n) { return isFinite(n) && n > 0; });
+      if (circle && nums.length >= 1) {
+        app.bedShape = 'circle';
+        app.bed = [nums[0], nums[0], nums[1] || app.bed[2]];
+      } else if (nums.length >= 2) {
+        app.bedShape = 'rect';
+        app.bed = [nums[0], nums[1], nums[2] || app.bed[2]];
+      }
+    }
+    var grid = parseFloat(params.get('grid'));
+    if (isFinite(grid) && grid > 0) app.gridStep = clamp(grid, 0.5, 500);
+  } catch (e) { /* 解析できない場合は既定値のまま */ }
 }

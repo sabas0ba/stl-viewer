@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const jsDir = join(root, 'src', 'js');
-const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|85)_/.test(f)).sort();
+const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|40|42|70|85)_/.test(f)).sort();
 const src = files.map((f) => readFileSync(join(jsDir, f), 'utf8')).join('\n');
 
 const ctx = vm.createContext({ console, TextDecoder, Map, Set });
@@ -257,6 +257,179 @@ test('候補法線: 立方体では 6 方向が得られる', () => {
   const c = G.candidateNormals(cubePositions(10), 24);
   assert.equal(c.length, 6);
   assert.ok(Math.abs(c[0].area - 100) < 1e-3);
+});
+
+// --- 図面 / PDF ---
+
+function makePart(positions) {
+  return { positions: positions, localBounds: G.computeBounds(positions), matrix: I() };
+}
+
+// PDF の相互参照表を検証する (各オフセットが "N 0 obj" を指しているか)
+function verifyPdfXref(bytes) {
+  const text = Buffer.from(bytes).toString('latin1');
+  assert.ok(text.startsWith('%PDF-1.4'), 'ヘッダが不正');
+  assert.ok(text.endsWith('%%EOF\n'), '終端が不正');
+  const m = /startxref\s+(\d+)/.exec(text);
+  assert.ok(m, 'startxref がない');
+  const xrefPos = parseInt(m[1], 10);
+  assert.equal(text.slice(xrefPos, xrefPos + 4), 'xref', 'startxref の位置が不正');
+  const header = /xref\n0 (\d+)\n/.exec(text.slice(xrefPos));
+  assert.ok(header, 'xref ヘッダが不正');
+  const count = parseInt(header[1], 10);
+  const entryStart = xrefPos + header[0].length;
+  for (let i = 1; i < count; i++) {
+    const entry = text.substr(entryStart + i * 20, 20);
+    const off = parseInt(entry.slice(0, 10), 10);
+    assert.equal(text.slice(off, off + String(i).length + 6), i + ' 0 obj', `オブジェクト ${i} のオフセットが不正`);
+  }
+  return { text: text, objectCount: count };
+}
+
+test('図面: 立方体の正面シルエットは 4 本の輪郭線', () => {
+  const part = makePart(cubePositions(10));
+  const d = G.buildViewDrawing([part], 'front', { feature: false });
+  assert.equal(d.silhouette.length, 4, `segs=${d.silhouette.length}`);
+  assert.ok(Math.abs(d.bounds.width - 10) < 1e-6 && Math.abs(d.bounds.height - 10) < 1e-6);
+  assert.equal(d.uLabel, 'X');
+  assert.equal(d.vLabel, 'Z');
+});
+
+test('図面: 各投影で対応する 2 軸の実寸が得られる', () => {
+  const pos = cubePositions(10);
+  // Y 方向に 2 倍した直方体 (10 x 20 x 10)
+  const scaled = Float32Array.from(pos);
+  for (let i = 1; i < scaled.length; i += 3) scaled[i] *= 2;
+  const part = makePart(scaled);
+  const front = G.buildViewDrawing([part], 'front', {});
+  const top = G.buildViewDrawing([part], 'top', {});
+  const right = G.buildViewDrawing([part], 'right', {});
+  assert.ok(Math.abs(front.bounds.width - 10) < 1e-6 && Math.abs(front.bounds.height - 10) < 1e-6);
+  assert.ok(Math.abs(top.bounds.width - 10) < 1e-6 && Math.abs(top.bounds.height - 20) < 1e-6);
+  assert.ok(Math.abs(right.bounds.width - 20) < 1e-6 && Math.abs(right.bounds.height - 10) < 1e-6);
+});
+
+test('図面: 回転させたパーツの輪郭も実寸を保つ', () => {
+  const part = makePart(cubePositions(10));
+  part.matrix = G.M4.compose(G.M4.create(), [0, 0, 0], G.Quat.fromAxisAngle([0, 0, 1], Math.PI / 4), [1, 1, 1]);
+  const top = G.buildViewDrawing([part], 'top', {});
+  // 45 度回転した正方形の外接幅は 10 * sqrt(2)
+  assert.ok(Math.abs(top.bounds.width - 10 * Math.SQRT2) < 1e-4, String(top.bounds.width));
+});
+
+test('図面: 特徴エッジは指定時のみ出力される', () => {
+  const pos = cubePositions(10);
+  const part = makePart(pos);
+  const off = G.buildViewDrawing([part], 'front', { feature: false });
+  const on = G.buildViewDrawing([part], 'front', { feature: true });
+  assert.equal(off.feature.length, 0);
+  // 立方体を正面から見ると手前の面は平坦なので稜線は増えない
+  assert.equal(on.feature.length, 0);
+  const stepped = new Float32Array([...pos, ...cubePositions(6, 0, 0, 10)]);
+  const on2 = G.buildViewDrawing([makePart(stepped)], 'front', { feature: true });
+  assert.ok(on2.silhouette.length > 4, `segs=${on2.silhouette.length}`);
+});
+
+test('図面: 断面図を生成できる', () => {
+  const d = G.buildSectionDrawing([makePart(cubePositions(10))], 2, 5);
+  assert.ok(d.silhouette.length >= 4);
+  assert.ok(Math.abs(d.bounds.width - 10) < 1e-6 && Math.abs(d.bounds.height - 10) < 1e-6);
+  assert.match(d.title, /SECTION Z = 5\.00/);
+});
+
+test('割り付け: 小さい図は 1 ページに中央配置される', () => {
+  const d = G.buildViewDrawing([makePart(cubePositions(10))], 'front', {});
+  const lay = G.paginateDrawing(d, { paper: { w: 210, h: 297 }, margin: 10, overlap: 10, scale: 1 });
+  assert.equal(lay.pages.length, 1);
+  const p = lay.pages[0];
+  // 図の中心が作図領域の中心に一致する
+  const cx = (d.bounds.minU + d.bounds.maxU) / 2 - p.originU;
+  const cy = (d.bounds.minV + d.bounds.maxV) / 2 - p.originV;
+  assert.ok(Math.abs(cx - lay.contentW / 2) < 12, `cx=${cx} / ${lay.contentW / 2}`);
+  assert.ok(Math.abs(cy - lay.contentH / 2) < 12, `cy=${cy} / ${lay.contentH / 2}`);
+});
+
+test('割り付け: 用紙を超える図は重ね代付きで分割される', () => {
+  const big = new Float32Array(cubePositions(400));
+  const d = G.buildViewDrawing([makePart(big)], 'front', {});
+  const opts = { paper: { w: 210, h: 297 }, margin: 10, overlap: 10, scale: 1 };
+  const lay = G.paginateDrawing(d, opts);
+  assert.ok(lay.cols >= 3 && lay.rows >= 2, `${lay.cols}x${lay.rows}`);
+  assert.equal(lay.pages.length, lay.cols * lay.rows);
+  // 隣接タイルの原点差 = 作図領域幅 - 重ね代
+  const step = lay.pages[1].originU - lay.pages[0].originU;
+  assert.ok(Math.abs(step - (lay.contentW - opts.overlap)) < 1e-6, String(step));
+  // 全タイルで図面全体を覆う
+  const last = lay.pages[lay.pages.length - 1];
+  assert.ok(last.originU + lay.contentW >= d.bounds.maxU, '右端が覆われていない');
+});
+
+test('割り付け: 倍率を変えるとページ数が変わる', () => {
+  const d = G.buildViewDrawing([makePart(cubePositions(400))], 'front', {});
+  const base = { paper: { w: 210, h: 297 }, margin: 10, overlap: 10 };
+  const p1 = G.paginateDrawing(d, Object.assign({ scale: 1 }, base));
+  const p2 = G.paginateDrawing(d, Object.assign({ scale: 0.25 }, base));
+  assert.ok(p2.pages.length < p1.pages.length);
+  assert.equal(p2.pages.length, 1);
+});
+
+test('PDF: 構造 (xref / ページ数 / 用紙サイズ) が正しい', () => {
+  const d1 = G.buildViewDrawing([makePart(cubePositions(10))], 'front', {});
+  const d2 = G.buildViewDrawing([makePart(cubePositions(10))], 'top', {});
+  const bytes = G.renderDrawingsToPDF([d1, d2], { paper: { w: 210, h: 297 }, title: 'cube' });
+  const { text } = verifyPdfXref(bytes);
+  assert.match(text, /\/Type \/Catalog/);
+  assert.equal((text.match(/\/Type \/Page[^s]/g) || []).length, 2);
+  assert.match(text, /\/Count 2/);
+  // A4 縦 = 595.276 x 841.89 pt
+  assert.match(text, /MediaBox \[0 0 595\.276 841\.89\]/);
+  assert.match(text, /\(cube {2}\| {2}FRONT \\\(XZ\\\)\)/);
+});
+
+test('PDF: 図形が実寸 (pt) で配置される', () => {
+  const d = G.buildViewDrawing([makePart(cubePositions(10))], 'front', {});
+  const bytes = G.renderDrawingsToPDF([d], { paper: { w: 210, h: 297 }, dimensions: false });
+  const text = Buffer.from(bytes).toString('latin1');
+  const coords = [];
+  const re = /(-?[\d.]+) (-?[\d.]+) m (-?[\d.]+) (-?[\d.]+) l S/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    coords.push([parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])]);
+  }
+  assert.ok(coords.length >= 4, `lines=${coords.length}`);
+  // 輪郭 4 本のうち水平線の長さは 10mm = 28.346pt
+  const lens = coords.map((c) => Math.hypot(c[2] - c[0], c[3] - c[1]));
+  const target = 10 * 72 / 25.4;
+  const matched = lens.filter((l) => Math.abs(l - target) < 0.05);
+  assert.ok(matched.length >= 4, `10mm の線が ${matched.length} 本しかない: ${lens.slice(0, 8)}`);
+});
+
+test('PDF: 非 ASCII 文字は置換され構造を壊さない', () => {
+  const d = G.buildViewDrawing([makePart(cubePositions(10))], 'front', {});
+  const bytes = G.renderDrawingsToPDF([d], { paper: { w: 210, h: 297 }, title: '部品(A)\\test' });
+  const { text } = verifyPdfXref(bytes);
+  // 非 ASCII は '?' に置換され、() と \\ はエスケープされる
+  assert.match(text, /\(\?\?\\\(A\\\)\\\\test/);
+});
+
+test('SVG: mm 指定で実寸出力される', () => {
+  const d = G.buildViewDrawing([makePart(cubePositions(10))], 'front', {});
+  const svg = G.renderDrawingToSVG(d, {});
+  const m = /width="([\d.]+)mm" height="([\d.]+)mm"/.exec(svg);
+  assert.ok(m, 'mm 指定がない');
+  assert.ok(Math.abs(parseFloat(m[1]) - (10 + 32)) < 1e-3, m[1]);
+  assert.match(svg, /viewBox="0 0 42\.000/);
+  assert.equal((svg.match(/<line /g) || []).length >= 4, true);
+});
+
+test('ステージ: 円形の範囲判定', () => {
+  const bed = [200, 200, 250];
+  const inside = { min: [80, 80, 0], max: [120, 120, 10] };
+  const outside = { min: [0, 0, 0], max: [30, 30, 10] };   // 角は円の外
+  assert.equal(G.outsideBedXY(inside, bed, 'circle'), false);
+  assert.equal(G.outsideBedXY(outside, bed, 'circle'), true);
+  assert.equal(G.outsideBedXY(outside, bed, 'rect'), false);
+  assert.equal(G.outsideBedXY({ min: [-1, 0, 0], max: [10, 10, 10] }, bed, 'rect'), true);
 });
 
 let failed = 0;

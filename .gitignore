@@ -1,4 +1,5 @@
 dist/shots/
+dist/downloads/
 test/fixtures/sphere-big.stl
 node_modules/
 *.tgz

@@ -186,6 +186,14 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
   #viewport { order: 1; min-height: 42vh; }
 }
 
+.print-preview { margin-top: 8px; }
+.preview-item { margin-bottom: 10px; }
+.preview-svg {
+  background: #fff; border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px; overflow: hidden;
+}
+.preview-svg svg { display: block; max-width: 100%; height: auto; }
+
 </style>
 </head>
 <body>
@@ -254,6 +262,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <button class="tab" data-tab="section">断面</button>
         <button class="tab" data-tab="orient">向き</button>
         <button class="tab" data-tab="place">配置</button>
+        <button class="tab" data-tab="print">図面</button>
       </nav>
 
       <section class="tabpanel" data-panel="measure">
@@ -311,15 +320,6 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
-        </div>
-        <div class="panel-title">ビルドプレート</div>
-        <div class="row">
-          <label>X</label><input type="number" id="in-bed-x" value="220" min="10" step="1">
-          <label>Y</label><input type="number" id="in-bed-y" value="220" min="10" step="1">
-          <label>Z</label><input type="number" id="in-bed-z" value="250" min="10" step="1">
-        </div>
-        <div class="row">
-          <select id="sel-printer"></select>
         </div>
       </section>
 
@@ -382,6 +382,31 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
       </section>
 
       <section class="tabpanel" data-panel="place" hidden>
+        <div class="panel-title">ステージ (造形エリア)<span id="bed-summary" class="hint"></span></div>
+        <div class="row">
+          <label>形状</label>
+          <select id="sel-bed-shape">
+            <option value="rect">矩形</option>
+            <option value="circle">円形</option>
+          </select>
+          <select id="sel-printer"></select>
+        </div>
+        <div class="row" id="row-bed-rect">
+          <label>X</label><input type="number" id="in-bed-x" value="220" min="1" step="1">
+          <label>Y</label><input type="number" id="in-bed-y" value="220" min="1" step="1">
+        </div>
+        <div class="row" id="row-bed-circle" hidden>
+          <label>直径</label><input type="number" id="in-bed-d" value="220" min="1" step="1">
+        </div>
+        <div class="row">
+          <label>高さ Z</label><input type="number" id="in-bed-z" value="250" min="1" step="1">
+          <label>グリッド</label><input type="number" id="in-grid-step" value="10" min="0.5" step="1">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-bed-fit">モデルに合わせる</button>
+          <button class="btn sm" id="btn-bed-reset">既定に戻す</button>
+        </div>
         <div class="panel-title">位置</div>
         <div class="row">
           <label>X</label><input type="number" id="in-pos-x" step="1">
@@ -404,6 +429,63 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <div class="panel-title">干渉・領域チェック</div>
         <div class="row"><button class="btn sm" id="btn-collide">チェック実行</button></div>
         <table class="kv" id="tbl-collide"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="print" hidden>
+        <div class="panel-title">実寸出力 (紙で寸法を確認する)</div>
+        <div class="row">
+          <label>対象</label>
+          <select id="sel-print-target">
+            <option value="selected">選択パーツ</option>
+            <option value="all">表示中のすべて</option>
+          </select>
+        </div>
+        <div class="checks" id="print-views">
+          <label><input type="checkbox" value="front" checked> 正面図 (X-Z)</label>
+          <label><input type="checkbox" value="top" checked> 平面図 (X-Y)</label>
+          <label><input type="checkbox" value="right"> 右側面図 (Y-Z)</label>
+          <label><input type="checkbox" value="bottom"> 底面図 (X-Y)</label>
+          <label><input type="checkbox" value="section"> 断面 (断面タブの軸・位置)</label>
+        </div>
+        <div class="panel-title">用紙</div>
+        <div class="row">
+          <select id="sel-paper"></select>
+          <select id="sel-paper-orient">
+            <option value="portrait">縦</option>
+            <option value="landscape">横</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>余白</label><input type="number" id="in-print-margin" value="10" min="0" step="1" style="width:64px">
+          <label>重ね代</label><input type="number" id="in-print-overlap" value="10" min="0" step="1" style="width:64px">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <label>倍率</label>
+          <select id="sel-print-scale">
+            <option value="1">1:1 (実寸)</option>
+            <option value="0.5">1:2 縮小</option>
+            <option value="0.25">1:4 縮小</option>
+            <option value="2">2:1 拡大</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="chk-print-dims" checked> 寸法線</label>
+          <label><input type="checkbox" id="chk-print-feature"> 稜線 (特徴エッジ) も描く</label>
+          <label><input type="checkbox" id="chk-print-grid"> グリッドを描く</label>
+        </div>
+        <div class="row">
+          <button class="btn primary sm" id="btn-print-pdf">PDF を書き出し</button>
+          <button class="btn sm" id="btn-print-svg">SVG を書き出し</button>
+          <button class="btn sm" id="btn-print-preview">プレビュー</button>
+        </div>
+        <table class="kv" id="tbl-print"></table>
+        <div id="print-preview" class="print-preview" hidden></div>
+        <p class="hint">
+          印刷時は「実際のサイズ / 100%」を選び、用紙に合わせる設定を切ること。
+          各ページ下部の 100 mm 基準線を定規で測れば倍率のずれを確認できる。
+          PDF 内の文字はフォント非埋め込みのため ASCII のみとなる。
+        </p>
       </section>
     </aside>
   </main>
@@ -1242,6 +1324,13 @@ function chainSegments(segs, tol) {
   return loops;
 }
 
+// 指定軸を Z に一致させる回転行列。任意軸の断面を sliceAtZ で扱うために用いる
+function sliceRotation(axis) {
+  var v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axis];
+  var q = Quat.fromUnitVectors(v, [0, 0, 1]);
+  return M4.compose(M4.create(), [0, 0, 0], q, [1, 1, 1]);
+}
+
 function polygonArea(points) {
   var a = 0;
   for (var i = 0, n = points.length; i < n; i++) {
@@ -1356,6 +1445,640 @@ function aabbOverlap(a, b, margin) {
     if (a.max[k] < b.min[k] + m || b.max[k] < a.min[k] + m) return false;
   }
   return true;
+}
+
+// ===== 40_pdf.js =====
+// ---------------------------------------------------------------------------
+// 最小構成の PDF ライタ (外部ライブラリ非依存)
+// - 座標は mm 指定、内部で pt (1/72 inch) へ変換する
+// - 原点はページ左下、Y 上向き (PDF の既定と同じ)
+// - フォントは標準 14 フォントの Helvetica のみ。埋め込みを行わないため
+//   文字列は ASCII に限定し、非 ASCII は '?' に置換する
+// ---------------------------------------------------------------------------
+
+var MM_TO_PT = 72 / 25.4;
+
+function pdfNum(v) {
+  // PDF の実数表記。指数表記は許されないため固定小数で出力する
+  var s = (Math.round(v * 1000) / 1000).toFixed(3);
+  return s.replace(/\.?0+$/, '') || '0';
+}
+
+function pdfEscapeText(s) {
+  var out = '';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    var ch = (c >= 32 && c <= 126) ? s[i] : '?';
+    if (ch === '(' || ch === ')' || ch === '\\') out += '\\';
+    out += ch;
+  }
+  return out;
+}
+
+function createPDF(pageWidthMm, pageHeightMm) {
+  return {
+    width: pageWidthMm,
+    height: pageHeightMm,
+    pages: [],
+    addPage: function () {
+      var ops = [];
+      var page = {
+        ops: ops,
+        _stroke: null,
+        _fill: null,
+        _width: null,
+        setStroke: function (r, g, b) {
+          var key = r + ',' + g + ',' + b;
+          if (this._stroke !== key) { ops.push(pdfNum(r) + ' ' + pdfNum(g) + ' ' + pdfNum(b) + ' RG'); this._stroke = key; }
+          return this;
+        },
+        setFill: function (r, g, b) {
+          var key = r + ',' + g + ',' + b;
+          if (this._fill !== key) { ops.push(pdfNum(r) + ' ' + pdfNum(g) + ' ' + pdfNum(b) + ' rg'); this._fill = key; }
+          return this;
+        },
+        setLineWidth: function (pt) {
+          if (this._width !== pt) { ops.push(pdfNum(pt) + ' w'); this._width = pt; }
+          return this;
+        },
+        setDash: function (arrPt, phase) {
+          if (!arrPt || !arrPt.length) ops.push('[] 0 d');
+          else ops.push('[' + arrPt.map(pdfNum).join(' ') + '] ' + pdfNum(phase || 0) + ' d');
+          return this;
+        },
+        line: function (x1, y1, x2, y2) {
+          ops.push(pdfNum(x1 * MM_TO_PT) + ' ' + pdfNum(y1 * MM_TO_PT) + ' m ' +
+            pdfNum(x2 * MM_TO_PT) + ' ' + pdfNum(y2 * MM_TO_PT) + ' l S');
+          return this;
+        },
+        // points: [[x,y], ...] (mm)
+        polyline: function (points, close, fill) {
+          if (!points.length) return this;
+          var s = pdfNum(points[0][0] * MM_TO_PT) + ' ' + pdfNum(points[0][1] * MM_TO_PT) + ' m';
+          for (var i = 1; i < points.length; i++) {
+            s += ' ' + pdfNum(points[i][0] * MM_TO_PT) + ' ' + pdfNum(points[i][1] * MM_TO_PT) + ' l';
+          }
+          if (close) s += ' h';
+          s += fill ? ' f' : ' S';
+          ops.push(s);
+          return this;
+        },
+        rect: function (x, y, w, h, fill) {
+          ops.push(pdfNum(x * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT) + ' ' +
+            pdfNum(w * MM_TO_PT) + ' ' + pdfNum(h * MM_TO_PT) + ' re ' + (fill ? 'f' : 'S'));
+          return this;
+        },
+        circle: function (cx, cy, r, fill) {
+          // 4 本の 3 次ベジエで円を近似する
+          var k = 0.5522847498 * r;
+          var p = function (x, y) { return pdfNum(x * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT); };
+          ops.push(
+            p(cx + r, cy) + ' m ' +
+            p(cx + r, cy + k) + ' ' + p(cx + k, cy + r) + ' ' + p(cx, cy + r) + ' c ' +
+            p(cx - k, cy + r) + ' ' + p(cx - r, cy + k) + ' ' + p(cx - r, cy) + ' c ' +
+            p(cx - r, cy - k) + ' ' + p(cx - k, cy - r) + ' ' + p(cx, cy - r) + ' c ' +
+            p(cx + k, cy - r) + ' ' + p(cx + r, cy - k) + ' ' + p(cx + r, cy) + ' c ' +
+            (fill ? 'f' : 'S'));
+          return this;
+        },
+        // align: 'left' | 'center' | 'right'
+        text: function (x, y, str, sizePt, align, bold) {
+          var t = pdfEscapeText(String(str));
+          var size = sizePt || 8;
+          var w = pdfTextWidthMm(t, size);
+          var tx = x;
+          if (align === 'center') tx = x - w / 2;
+          else if (align === 'right') tx = x - w;
+          ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + pdfNum(size) + ' Tf ' +
+            pdfNum(tx * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT) + ' Td (' + t + ') Tj ET');
+          return this;
+        }
+      };
+      this.pages.push(page);
+      return page;
+    },
+    toBytes: function () {
+      return serializePDF(this);
+    }
+  };
+}
+
+// Helvetica の概算文字幅 (mm)。寸法テキストの中央寄せに用いる
+function pdfTextWidthMm(str, sizePt) {
+  var w = 0;
+  for (var i = 0; i < str.length; i++) {
+    var c = str[i];
+    if (/[ilj.,:;'|!\[\]]/.test(c)) w += 0.30;
+    else if (/[A-Z@%]/.test(c)) w += 0.68;
+    else if (/[mwMW]/.test(c)) w += 0.85;
+    else w += 0.53;
+  }
+  return w * sizePt / MM_TO_PT;
+}
+
+function serializePDF(doc) {
+  var objects = [];   // 1-indexed で扱うため 0 番はダミー
+  objects.push(null);
+  function addObject(body) { objects.push(body); return objects.length - 1; }
+
+  var catalogId = addObject(null);   // 1
+  var pagesId = addObject(null);     // 2
+  var fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  var fontBoldId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+
+  var kids = [];
+  for (var i = 0; i < doc.pages.length; i++) {
+    var content = doc.pages[i].ops.join('\n') + '\n';
+    var contentId = addObject('<< /Length ' + content.length + ' >>\nstream\n' + content + 'endstream');
+    var pageId = addObject(
+      '<< /Type /Page /Parent ' + pagesId + ' 0 R' +
+      ' /MediaBox [0 0 ' + pdfNum(doc.width * MM_TO_PT) + ' ' + pdfNum(doc.height * MM_TO_PT) + ']' +
+      ' /Resources << /Font << /F1 ' + fontId + ' 0 R /F2 ' + fontBoldId + ' 0 R >> >>' +
+      ' /Contents ' + contentId + ' 0 R >>');
+    kids.push(pageId + ' 0 R');
+  }
+  objects[catalogId] = '<< /Type /Catalog /Pages ' + pagesId + ' 0 R >>';
+  objects[pagesId] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + doc.pages.length + ' >>';
+
+  var out = '%PDF-1.4\n';
+  var offsets = [0];
+  for (i = 1; i < objects.length; i++) {
+    offsets[i] = out.length;
+    out += i + ' 0 obj\n' + objects[i] + '\nendobj\n';
+  }
+  var xrefPos = out.length;
+  out += 'xref\n0 ' + objects.length + '\n';
+  out += '0000000000 65535 f \n';
+  for (i = 1; i < objects.length; i++) {
+    out += ('0000000000' + offsets[i]).slice(-10) + ' 00000 n \n';
+  }
+  out += 'trailer\n<< /Size ' + objects.length + ' /Root ' + catalogId + ' 0 R >>\n';
+  out += 'startxref\n' + xrefPos + '\n%%EOF\n';
+
+  // 内容は ASCII に限定しているため 1 文字 = 1 バイトで対応する
+  var bytes = new Uint8Array(out.length);
+  for (i = 0; i < out.length; i++) {
+    var c = out.charCodeAt(i);
+    bytes[i] = c > 255 ? 63 : c;
+  }
+  return bytes;
+}
+
+var PAPER_SIZES = [
+  { name: 'A4', w: 210, h: 297 },
+  { name: 'A3', w: 297, h: 420 },
+  { name: 'A5', w: 148, h: 210 },
+  { name: 'Letter', w: 215.9, h: 279.4 },
+  { name: 'Legal', w: 215.9, h: 355.6 }
+];
+
+// ===== 42_drawing.js =====
+// ---------------------------------------------------------------------------
+// 印刷用の実寸図面 (正投影の輪郭線・断面輪郭) の生成
+// 正投影のシルエットは、隣接 2 面の表裏が入れ替わるエッジ (輪郭線) を
+// 厳密に抽出して得る。ラスタ化を行わないため、出力はベクタかつ寸法誤差なし。
+// ---------------------------------------------------------------------------
+
+var DRAW_VIEWS = {
+  front: { name: 'FRONT (XZ)', jp: '正面図', into: [0, 1, 0], uAxis: 0, uSign: 1, vAxis: 2, vSign: 1, uLabel: 'X', vLabel: 'Z' },
+  back: { name: 'BACK (XZ)', jp: '背面図', into: [0, -1, 0], uAxis: 0, uSign: -1, vAxis: 2, vSign: 1, uLabel: 'X', vLabel: 'Z' },
+  right: { name: 'RIGHT (YZ)', jp: '右側面図', into: [-1, 0, 0], uAxis: 1, uSign: 1, vAxis: 2, vSign: 1, uLabel: 'Y', vLabel: 'Z' },
+  left: { name: 'LEFT (YZ)', jp: '左側面図', into: [1, 0, 0], uAxis: 1, uSign: -1, vAxis: 2, vSign: 1, uLabel: 'Y', vLabel: 'Z' },
+  top: { name: 'TOP (XY)', jp: '平面図', into: [0, 0, -1], uAxis: 0, uSign: 1, vAxis: 1, vSign: 1, uLabel: 'X', vLabel: 'Y' },
+  bottom: { name: 'BOTTOM (XY)', jp: '底面図', into: [0, 0, 1], uAxis: 0, uSign: 1, vAxis: 1, vSign: -1, uLabel: 'X', vLabel: 'Y' }
+};
+
+// 頂点統合結果のキャッシュ (図面生成時のみ必要)
+function ensureWelded(part) {
+  if (part.welded) return part.welded;
+  var diag = V3.len(part.localBounds.size) || 1;
+  part.welded = weldVertices(part.positions, Math.max(diag * 1e-6, 1e-5));
+  return part.welded;
+}
+
+// パーツのワールド座標頂点 (統合済み)
+function weldedWorldVertices(part) {
+  var w = ensureWelded(part);
+  var m = part.matrix;
+  var out = new Float64Array(w.vertices.length);
+  for (var i = 0; i < w.vertices.length; i += 3) {
+    var x = w.vertices[i], y = w.vertices[i + 1], z = w.vertices[i + 2];
+    out[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+    out[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+    out[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+  }
+  return out;
+}
+
+// 指定視線方向における輪郭線と特徴エッジを 2D (u, v) へ投影して返す
+function projectedEdges(part, view, opts) {
+  var o = opts || {};
+  var featureDeg = o.featureAngle === undefined ? 25 : o.featureAngle;
+  var wantFeature = !!o.feature;
+  var w = ensureWelded(part);
+  var verts = weldedWorldVertices(part);
+  var index = w.index;
+  var faceCount = index.length / 3;
+  var into = view.into;
+
+  // 面法線と表裏
+  var nx = new Float64Array(faceCount), ny = new Float64Array(faceCount), nz = new Float64Array(faceCount);
+  var front = new Uint8Array(faceCount);
+  var i, f;
+  for (f = 0; f < faceCount; f++) {
+    var a = index[f * 3] * 3, b = index[f * 3 + 1] * 3, c = index[f * 3 + 2] * 3;
+    var e1x = verts[b] - verts[a], e1y = verts[b + 1] - verts[a + 1], e1z = verts[b + 2] - verts[a + 2];
+    var e2x = verts[c] - verts[a], e2y = verts[c + 1] - verts[a + 1], e2z = verts[c + 2] - verts[a + 2];
+    var px = e1y * e2z - e1z * e2y, py = e1z * e2x - e1x * e2z, pz = e1x * e2y - e1y * e2x;
+    var l = Math.sqrt(px * px + py * py + pz * pz);
+    if (l < 1e-20) { nx[f] = 0; ny[f] = 0; nz[f] = 0; front[f] = 0; continue; }
+    nx[f] = px / l; ny[f] = py / l; nz[f] = pz / l;
+    front[f] = (nx[f] * into[0] + ny[f] * into[1] + nz[f] * into[2]) < 0 ? 1 : 0;
+  }
+
+  // エッジ -> 隣接面
+  var edgeMap = new Map();
+  for (f = 0; f < faceCount; f++) {
+    var v0 = index[f * 3], v1 = index[f * 3 + 1], v2 = index[f * 3 + 2];
+    if (v0 === v1 || v1 === v2 || v0 === v2) continue;
+    var pairs = [[v0, v1], [v1, v2], [v2, v0]];
+    for (var e = 0; e < 3; e++) {
+      var lo = Math.min(pairs[e][0], pairs[e][1]), hi = Math.max(pairs[e][0], pairs[e][1]);
+      var key = lo * 67108864 + hi;
+      var rec = edgeMap.get(key);
+      if (rec === undefined) edgeMap.set(key, { a: lo, b: hi, f0: f, f1: -1, n: 1 });
+      else { rec.n++; if (rec.f1 < 0) rec.f1 = f; }
+    }
+  }
+
+  var uA = view.uAxis, vA = view.vAxis, uS = view.uSign, vS = view.vSign;
+  var sil = [], feat = [];
+  var cosFeature = Math.cos(featureDeg * Math.PI / 180);
+  edgeMap.forEach(function (rec) {
+    var p0 = rec.a * 3, p1 = rec.b * 3;
+    var seg = [
+      verts[p0 + uA] * uS, verts[p0 + vA] * vS,
+      verts[p1 + uA] * uS, verts[p1 + vA] * vS
+    ];
+    if (rec.n === 1) { sil.push(seg); return; }          // 境界エッジ (穴の縁)
+    if (rec.n > 2) { sil.push(seg); return; }            // 非多様体は輪郭として扱う
+    if (front[rec.f0] !== front[rec.f1]) { sil.push(seg); return; }
+    if (!wantFeature) return;
+    if (!front[rec.f0]) return;                          // 裏側の稜線は描かない
+    var d = nx[rec.f0] * nx[rec.f1] + ny[rec.f0] * ny[rec.f1] + nz[rec.f0] * nz[rec.f1];
+    if (d < cosFeature) feat.push(seg);
+  });
+  return { silhouette: sil, feature: feat };
+}
+
+function segmentsBounds(lists) {
+  var minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (var k = 0; k < lists.length; k++) {
+    var segs = lists[k];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (s[0] < minU) minU = s[0]; if (s[0] > maxU) maxU = s[0];
+      if (s[2] < minU) minU = s[2]; if (s[2] > maxU) maxU = s[2];
+      if (s[1] < minV) minV = s[1]; if (s[1] > maxV) maxV = s[1];
+      if (s[3] < minV) minV = s[3]; if (s[3] > maxV) maxV = s[3];
+    }
+  }
+  if (!isFinite(minU)) return null;
+  return { minU: minU, maxU: maxU, minV: minV, maxV: maxV, width: maxU - minU, height: maxV - minV };
+}
+
+// 正投影図を組み立てる。parts はワールド変換済みのパーツ配列
+function buildViewDrawing(parts, viewKey, opts) {
+  var view = DRAW_VIEWS[viewKey];
+  var o = opts || {};
+  var sil = [], feat = [];
+  for (var i = 0; i < parts.length; i++) {
+    var r = projectedEdges(parts[i], view, o);
+    sil = sil.concat(r.silhouette);
+    feat = feat.concat(r.feature);
+  }
+  var b = segmentsBounds([sil, feat]);
+  if (!b) return null;
+  return {
+    kind: 'view',
+    key: viewKey,
+    title: view.name,
+    titleJp: view.jp,
+    uLabel: view.uLabel,
+    vLabel: view.vLabel,
+    silhouette: sil,
+    feature: feat,
+    bounds: b
+  };
+}
+
+// 断面図 (指定軸・位置) を組み立てる
+function buildSectionDrawing(parts, axis, value) {
+  var Rm = sliceRotation(axis);
+  var segs = [];
+  for (var i = 0; i < parts.length; i++) {
+    var m = M4.mul(M4.create(), Rm, parts[i].matrix);
+    var loops = sliceAtZ(parts[i].positions, m, value);
+    for (var l = 0; l < loops.length; l++) {
+      var pts = loops[l].points;
+      for (var k = 0; k + 1 < pts.length; k++) {
+        segs.push([pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]]);
+      }
+      if (loops[l].closed && pts.length > 2) {
+        segs.push([pts[pts.length - 1][0], pts[pts.length - 1][1], pts[0][0], pts[0][1]]);
+      }
+    }
+  }
+  var b = segmentsBounds([segs]);
+  if (!b) return null;
+  var labels = [['Y', 'Z'], ['X', 'Z'], ['X', 'Y']][axis];
+  return {
+    kind: 'section',
+    key: 'section',
+    title: 'SECTION ' + ['X', 'Y', 'Z'][axis] + ' = ' + value.toFixed(2) + ' mm',
+    titleJp: '断面 ' + ['X', 'Y', 'Z'][axis] + ' = ' + value.toFixed(2) + ' mm',
+    uLabel: labels[0],
+    vLabel: labels[1],
+    silhouette: segs,
+    feature: [],
+    bounds: b
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 用紙への割り付け
+// ---------------------------------------------------------------------------
+
+var PAGE_HEADER_MM = 9;   // 上部の表題領域
+var PAGE_FOOTER_MM = 16;  // 下部の校正スケール領域
+
+function paginateDrawing(drawing, opts) {
+  var paperW = opts.landscape ? opts.paper.h : opts.paper.w;
+  var paperH = opts.landscape ? opts.paper.w : opts.paper.h;
+  var margin = opts.margin === undefined ? 10 : opts.margin;
+  var overlap = opts.overlap === undefined ? 10 : opts.overlap;
+  var scale = opts.scale || 1;
+  var dimPad = opts.dimensions === false ? 3 : 24; // 寸法線と寸法値を描く余地
+
+  var contentW = paperW - margin * 2;
+  var contentH = paperH - margin * 2 - PAGE_HEADER_MM - PAGE_FOOTER_MM;
+  if (contentW <= 20 || contentH <= 20) throw new Error('用紙に対して余白が大きすぎます');
+
+  // 図面座標 (mm) での描画範囲。寸法線のぶん左下に余地を確保する
+  var minU = drawing.bounds.minU - dimPad;
+  var minV = drawing.bounds.minV - dimPad;
+  var maxU = drawing.bounds.maxU + 2;
+  var maxV = drawing.bounds.maxV + 2;
+  var totalW = (maxU - minU) * scale;
+  var totalH = (maxV - minV) * scale;
+
+  var stepW = contentW - overlap;
+  var stepH = contentH - overlap;
+  var cols = totalW <= contentW ? 1 : Math.ceil((totalW - overlap) / stepW);
+  var rows = totalH <= contentH ? 1 : Math.ceil((totalH - overlap) / stepH);
+
+  // 1 ページに収まる方向は用紙内で中央に寄せる (複数ページ時は継ぎ目を合わせるため寄せない)
+  var centerU = cols === 1 ? (contentW - totalW) / 2 / scale : 0;
+  var centerV = rows === 1 ? (contentH - totalH) / 2 / scale : 0;
+  var pages = [];
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      pages.push({
+        col: c + 1, row: r + 1, cols: cols, rows: rows,
+        // このページの左下に対応する図面座標 (mm)
+        originU: minU - centerU + (cols === 1 ? 0 : (c * stepW) / scale),
+        originV: minV - centerV + (rows === 1 ? 0 : ((rows - 1 - r) * stepH) / scale)
+      });
+    }
+  }
+  return {
+    pages: pages, cols: cols, rows: rows,
+    paperW: paperW, paperH: paperH, margin: margin, overlap: overlap, scale: scale,
+    contentW: contentW, contentH: contentH,
+    totalW: totalW, totalH: totalH
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PDF 出力
+// ---------------------------------------------------------------------------
+
+function renderDrawingsToPDF(drawings, opts) {
+  var o = opts || {};
+  var paper = o.paper || PAPER_SIZES[0];
+  var layoutOpts = {
+    paper: paper, landscape: !!o.landscape, margin: o.margin, overlap: o.overlap,
+    scale: o.scale || 1, dimensions: o.dimensions !== false
+  };
+  var first = paginateDrawing(drawings[0], layoutOpts);
+  var pdf = createPDF(first.paperW, first.paperH);
+  var totalPages = 0;
+  var layouts = [];
+  for (var i = 0; i < drawings.length; i++) {
+    var lay = paginateDrawing(drawings[i], layoutOpts);
+    layouts.push(lay);
+    totalPages += lay.pages.length;
+  }
+  var pageNo = 0;
+  for (i = 0; i < drawings.length; i++) {
+    var d = drawings[i], l = layouts[i];
+    for (var p = 0; p < l.pages.length; p++) {
+      pageNo++;
+      drawPDFPage(pdf.addPage(), d, l, l.pages[p], o, pageNo, totalPages);
+    }
+  }
+  return pdf.toBytes();
+}
+
+function drawPDFPage(page, drawing, layout, tile, o, pageNo, totalPages) {
+  var margin = layout.margin;
+  var scale = layout.scale;
+  var x0 = margin, y0 = margin + PAGE_FOOTER_MM;
+  var cw = layout.contentW, ch = layout.contentH;
+
+  function toPageX(u) { return x0 + (u - tile.originU) * scale; }
+  function toPageY(v) { return y0 + (v - tile.originV) * scale; }
+
+  // --- 表題 ---
+  var title = (o.title ? o.title + '  |  ' : '') + drawing.title;
+  page.setFill(0, 0, 0);
+  page.text(x0, layout.paperH - margin - 4, title, 10, 'left', true);
+  var sub = 'scale ' + (scale === 1 ? '1:1 (actual size)' : scale.toFixed(3) + ' x') +
+    '   unit: mm' +
+    (layout.pages.length > 1 ? '   tile R' + tile.row + 'C' + tile.col + ' of R' + layout.rows + 'C' + layout.cols : '') +
+    '   page ' + pageNo + '/' + totalPages;
+  page.setFill(0.35, 0.35, 0.35);
+  page.text(x0, layout.paperH - margin - 8.4, sub, 7.5, 'left');
+  if (o.note) page.text(layout.paperW - margin, layout.paperH - margin - 8.4, o.note, 7.5, 'right');
+
+  // --- 作図領域の枠 ---
+  page.setStroke(0.75, 0.75, 0.75).setLineWidth(0.3).setDash(null);
+  page.rect(x0, y0, cw, ch, false);
+
+  page.ops.push('q');
+  page.ops.push(pdfNum(x0 * MM_TO_PT) + ' ' + pdfNum(y0 * MM_TO_PT) + ' ' +
+    pdfNum(cw * MM_TO_PT) + ' ' + pdfNum(ch * MM_TO_PT) + ' re W n');
+  page._stroke = page._fill = page._width = null;
+
+  // --- グリッド ---
+  if (o.grid) {
+    var step = o.gridStep || 10;
+    page.setStroke(0.86, 0.86, 0.86).setLineWidth(0.2);
+    var uStart = Math.ceil(tile.originU / step) * step;
+    for (var u = uStart; toPageX(u) <= x0 + cw; u += step) {
+      page.line(toPageX(u), y0, toPageX(u), y0 + ch);
+    }
+    var vStart = Math.ceil(tile.originV / step) * step;
+    for (var v = vStart; toPageY(v) <= y0 + ch; v += step) {
+      page.line(x0, toPageY(v), x0 + cw, toPageY(v));
+    }
+  }
+
+  // --- 特徴エッジ (細線) ---
+  var i, s;
+  if (drawing.feature.length) {
+    page.setStroke(0.45, 0.45, 0.45).setLineWidth(0.25).setDash(null);
+    for (i = 0; i < drawing.feature.length; i++) {
+      s = drawing.feature[i];
+      page.line(toPageX(s[0]), toPageY(s[1]), toPageX(s[2]), toPageY(s[3]));
+    }
+  }
+  // --- 輪郭線 (太線) ---
+  page.setStroke(0, 0, 0).setLineWidth(o.lineWidth || 0.7);
+  for (i = 0; i < drawing.silhouette.length; i++) {
+    s = drawing.silhouette[i];
+    page.line(toPageX(s[0]), toPageY(s[1]), toPageX(s[2]), toPageY(s[3]));
+  }
+
+  // --- 寸法線 ---
+  if (o.dimensions !== false) drawPDFDimensions(page, drawing, toPageX, toPageY);
+
+  page.ops.push('Q');
+  page._stroke = page._fill = page._width = null;
+
+  // --- タイル継ぎ目の目印 ---
+  if (layout.pages.length > 1) {
+    page.setStroke(0.55, 0.55, 0.55).setLineWidth(0.3).setDash([2, 2]);
+    page.rect(x0, y0, cw, ch, false);
+    page.setDash(null);
+    // 位置合わせ用の十字
+    var marks = [[x0, y0], [x0 + cw, y0], [x0, y0 + ch], [x0 + cw, y0 + ch]];
+    page.setStroke(0.2, 0.2, 0.2).setLineWidth(0.3);
+    for (i = 0; i < marks.length; i++) {
+      page.line(marks[i][0] - 3, marks[i][1], marks[i][0] + 3, marks[i][1]);
+      page.line(marks[i][0], marks[i][1] - 3, marks[i][0], marks[i][1] + 3);
+    }
+    page.setFill(0.3, 0.3, 0.3);
+    page.text(x0 + cw / 2, y0 - 4.5, 'overlap ' + layout.overlap + ' mm - align crosses with the adjacent sheet', 7, 'center');
+  }
+
+  // --- 校正スケール (印刷倍率の確認用) ---
+  drawCalibrationRuler(page, x0, margin + 4, Math.min(100, cw));
+}
+
+function drawPDFDimensions(page, drawing, toPageX, toPageY) {
+  var b = drawing.bounds;
+  var off = 7;
+  page.setStroke(0.1, 0.35, 0.65).setLineWidth(0.3).setDash(null);
+  page.setFill(0.1, 0.35, 0.65);
+  // 水平 (下側)
+  var yl = toPageY(b.minV) - off;
+  page.line(toPageX(b.minU), yl, toPageX(b.maxU), yl);
+  page.line(toPageX(b.minU), yl - 2, toPageX(b.minU), toPageY(b.minV) + 1);
+  page.line(toPageX(b.maxU), yl - 2, toPageX(b.maxU), toPageY(b.minV) + 1);
+  page.text((toPageX(b.minU) + toPageX(b.maxU)) / 2, yl + 1.5,
+    drawing.uLabel + ' ' + b.width.toFixed(2), 8, 'center');
+  // 垂直 (左側)
+  var xl = toPageX(b.minU) - off;
+  page.line(xl, toPageY(b.minV), xl, toPageY(b.maxV));
+  page.line(xl - 2, toPageY(b.minV), toPageX(b.minU) + 1, toPageY(b.minV));
+  page.line(xl - 2, toPageY(b.maxV), toPageX(b.minU) + 1, toPageY(b.maxV));
+  page.text(xl - 1.5, (toPageY(b.minV) + toPageY(b.maxV)) / 2,
+    drawing.vLabel + ' ' + b.height.toFixed(2), 8, 'right');
+}
+
+// 100 mm の基準スケール。印刷時の倍率ずれを利用者が検出できるようにする
+function drawCalibrationRuler(page, x, y, lengthMm) {
+  var len = Math.max(20, Math.min(100, lengthMm));
+  page.setStroke(0, 0, 0).setLineWidth(0.4).setDash(null);
+  page.line(x, y, x + len, y);
+  for (var i = 0; i <= len; i += 10) {
+    var h = (i % 50 === 0) ? 3 : 1.8;
+    page.line(x + i, y, x + i, y + h);
+  }
+  page.setFill(0, 0, 0);
+  page.text(x, y - 3.4, '0', 7, 'left');
+  page.text(x + len, y - 3.4, len + ' mm', 7, 'center');
+  page.setFill(0.35, 0.35, 0.35);
+  page.text(x + len + 6, y - 0.5,
+    'Print at 100% (no page scaling). Measure this bar: it must be exactly ' + len + ' mm.', 7, 'left');
+}
+
+// ---------------------------------------------------------------------------
+// SVG 出力 (1 図面 = 1 ファイル、mm 指定なので実寸で印刷できる)
+// ---------------------------------------------------------------------------
+
+function renderDrawingToSVG(drawing, opts) {
+  var o = opts || {};
+  var pad = 16;
+  var b = drawing.bounds;
+  var w = b.width + pad * 2, h = b.height + pad * 2 + 12;
+  function X(u) { return (u - b.minU + pad).toFixed(3); }
+  function Y(v) { return (b.maxV - v + pad).toFixed(3); }
+  var out = [];
+  out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + w.toFixed(3) + 'mm" height="' + h.toFixed(3) +
+    'mm" viewBox="0 0 ' + w.toFixed(3) + ' ' + h.toFixed(3) + '">');
+  out.push('<title>' + escapeXml((o.title ? o.title + ' - ' : '') + drawing.titleJp) + ' (1:1)</title>');
+  out.push('<rect width="100%" height="100%" fill="#ffffff"/>');
+  if (o.grid) {
+    var step = o.gridStep || 10;
+    out.push('<g stroke="#dddddd" stroke-width="0.15">');
+    for (var u = Math.ceil(b.minU / step) * step; u <= b.maxU; u += step) {
+      out.push('<line x1="' + X(u) + '" y1="' + Y(b.maxV) + '" x2="' + X(u) + '" y2="' + Y(b.minV) + '"/>');
+    }
+    for (var v = Math.ceil(b.minV / step) * step; v <= b.maxV; v += step) {
+      out.push('<line x1="' + X(b.minU) + '" y1="' + Y(v) + '" x2="' + X(b.maxU) + '" y2="' + Y(v) + '"/>');
+    }
+    out.push('</g>');
+  }
+  var i, s;
+  if (drawing.feature.length) {
+    out.push('<g stroke="#888888" stroke-width="0.2" fill="none">');
+    for (i = 0; i < drawing.feature.length; i++) {
+      s = drawing.feature[i];
+      out.push('<line x1="' + X(s[0]) + '" y1="' + Y(s[1]) + '" x2="' + X(s[2]) + '" y2="' + Y(s[3]) + '"/>');
+    }
+    out.push('</g>');
+  }
+  out.push('<g stroke="#000000" stroke-width="' + (o.lineWidth || 0.35) + '" fill="none" stroke-linecap="round">');
+  for (i = 0; i < drawing.silhouette.length; i++) {
+    s = drawing.silhouette[i];
+    out.push('<line x1="' + X(s[0]) + '" y1="' + Y(s[1]) + '" x2="' + X(s[2]) + '" y2="' + Y(s[3]) + '"/>');
+  }
+  out.push('</g>');
+  // 表題と校正スケール
+  out.push('<g font-family="sans-serif" font-size="3.5" fill="#000000">');
+  out.push('<text x="' + pad.toFixed(2) + '" y="' + (pad - 6).toFixed(2) + '">' +
+    escapeXml(drawing.titleJp + '  1:1  ' + drawing.uLabel + ' ' + b.width.toFixed(2) +
+      ' x ' + drawing.vLabel + ' ' + b.height.toFixed(2) + ' mm') + '</text>');
+  var ry = h - 6;
+  out.push('<line x1="' + pad + '" y1="' + ry + '" x2="' + (pad + 100) + '" y2="' + ry +
+    '" stroke="#000" stroke-width="0.3"/>');
+  for (i = 0; i <= 100; i += 10) {
+    out.push('<line x1="' + (pad + i) + '" y1="' + ry + '" x2="' + (pad + i) + '" y2="' +
+      (ry - (i % 50 === 0 ? 3 : 1.8)) + '" stroke="#000" stroke-width="0.3"/>');
+  }
+  out.push('<text x="' + (pad + 106) + '" y="' + (ry + 1) + '" font-size="3">100 mm reference - print at 100%</text>');
+  out.push('</g>');
+  out.push('</svg>');
+  return out.join('\n');
+}
+
+function escapeXml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c];
+  });
 }
 
 // ===== 50_gl.js =====
@@ -1869,6 +2592,22 @@ function trianglesIntersect(a, b, budget) {
   return { hit: false, decided: step === 1 };
 }
 
+// ステージ (矩形 / 円形) の平面範囲に収まっているか判定する
+function outsideBedXY(bounds, bed, shape) {
+  var eps = 0.01;
+  if (shape === 'circle') {
+    var r = bed[0] / 2, cx = r, cy = bed[1] / 2;
+    for (var i = 0; i < 4; i++) {
+      var x = (i & 1) ? bounds.max[0] : bounds.min[0];
+      var y = (i & 2) ? bounds.max[1] : bounds.min[1];
+      if (Math.hypot(x - cx, y - cy) > r + eps) return true;
+    }
+    return false;
+  }
+  return bounds.min[0] < -eps || bounds.min[1] < -eps ||
+    bounds.max[0] > bed[0] + eps || bounds.max[1] > bed[1] + eps;
+}
+
 // ===== 80_render.js =====
 // ---------------------------------------------------------------------------
 // 描画
@@ -1954,21 +2693,66 @@ function clipUniformArray(planes) {
   return arr;
 }
 
-function buildGridLines(bed, step) {
+// ステージのグリッド線。円形ステージでは円内に収まる範囲のみ引く
+function buildGridLines(bed, step, shape) {
   var v = [];
-  var s = step || 10;
+  var s = step > 0 ? step : 10;
+  // 線数が過大にならないよう間隔を自動調整する
+  var maxLines = 400;
+  while ((bed[0] / s + bed[1] / s) > maxLines) s *= 2;
+  var strongEvery = s * 5;
   var i;
+  var circle = shape === 'circle';
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2;
+  function spanY(x) {
+    if (!circle) return [0, bed[1]];
+    var dx = x - cx;
+    if (Math.abs(dx) >= r) return null;
+    var h = Math.sqrt(r * r - dx * dx);
+    return [cy - h, cy + h];
+  }
+  function spanX(y) {
+    if (!circle) return [0, bed[0]];
+    var dy = y - cy;
+    if (Math.abs(dy) >= r) return null;
+    var h = Math.sqrt(r * r - dy * dy);
+    return [cx - h, cx + h];
+  }
   for (i = 0; i <= bed[0] + 1e-6; i += s) {
-    var strong = Math.abs(i % 50) < 1e-6;
-    v.push(i, 0, 0, i, bed[1], 0);
-    if (strong) { /* 太線の代替として二重線を引く */ v.push(i + 0.15, 0, 0, i + 0.15, bed[1], 0); }
+    var sy = spanY(i);
+    if (!sy) continue;
+    var strong = Math.abs(i % strongEvery) < 1e-6;
+    v.push(i, sy[0], 0, i, sy[1], 0);
+    if (strong) { /* 太線の代替として二重線を引く */ v.push(i + 0.15, sy[0], 0, i + 0.15, sy[1], 0); }
   }
   for (i = 0; i <= bed[1] + 1e-6; i += s) {
-    var strong2 = Math.abs(i % 50) < 1e-6;
-    v.push(0, i, 0, bed[0], i, 0);
-    if (strong2) { v.push(0, i + 0.15, 0, bed[0], i + 0.15, 0); }
+    var sx = spanX(i);
+    if (!sx) continue;
+    var strong2 = Math.abs(i % strongEvery) < 1e-6;
+    v.push(sx[0], i, 0, sx[1], i, 0);
+    if (strong2) { v.push(sx[0], i + 0.15, 0, sx[1], i + 0.15, 0); }
   }
   return new Float32Array(v);
+}
+
+// 円形ステージの造形可能領域 (円柱) の輪郭
+function buildCylinderLines(bed, segments) {
+  var n = segments || 72;
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2, h = bed[2];
+  var v = [];
+  for (var i = 0; i < n; i++) {
+    var a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    v.push(x0, y0, 0, x1, y1, 0);
+    v.push(x0, y0, h, x1, y1, h);
+  }
+  for (var k = 0; k < 4; k++) {
+    var a = (k / 4) * Math.PI * 2;
+    var x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+    v.push(x, y, 0, x, y, h);
+  }
+  return v;
 }
 
 function buildBoxLines(min, max, out) {
@@ -2042,14 +2826,16 @@ function drawScene(app, vp, mats, sb) {
     gl.useProgram(R.line.program);
     gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
     if (!R.gridDirty && R.gridBuf.count > 0) { /* 再利用 */ } else {
-      R.gridBuf.upload(buildGridLines(app.bed, 10));
+      R.gridBuf.upload(buildGridLines(app.bed, app.gridStep, app.bedShape));
       R.gridDirty = false;
     }
     gl.uniform4f(R.line.u.uColor, 0.30, 0.34, 0.40, 1);
     gl.bindVertexArray(R.gridBuf.vao);
     gl.drawArrays(gl.LINES, 0, R.gridBuf.count);
     // 造形可能領域の枠
-    var box = buildBoxLines([0, 0, 0], [app.bed[0], app.bed[1], app.bed[2]]);
+    var box = app.bedShape === 'circle'
+      ? buildCylinderLines(app.bed)
+      : buildBoxLines([0, 0, 0], [app.bed[0], app.bed[1], app.bed[2]]);
     R.boxBuf.upload(new Float32Array(box));
     gl.uniform4f(R.line.u.uColor, 0.45, 0.52, 0.62, 1);
     gl.bindVertexArray(R.boxBuf.vao);
@@ -2441,7 +3227,10 @@ var PRINTERS = [
   { name: 'Prusa MK3/MK4 (250 x 210 x 210)', bed: [250, 210, 210] },
   { name: 'Bambu X1/P1 (256 x 256 x 256)', bed: [256, 256, 256] },
   { name: 'Voron 2.4 350 (350 x 350 x 340)', bed: [350, 350, 340] },
-  { name: '光造形 (143 x 89 x 175)', bed: [143, 89, 175] }
+  { name: '光造形 (143 x 89 x 175)', bed: [143, 89, 175] },
+  { name: 'デルタ φ180 x 300', bed: [180, 180, 300], shape: 'circle' },
+  { name: 'デルタ φ250 x 400', bed: [250, 250, 400], shape: 'circle' },
+  { name: 'A4 相当の作業領域 (210 x 297)', bed: [210, 297, 200] }
 ];
 
 function selectedPart(app) {
@@ -2642,8 +3431,8 @@ function refreshWarnings(app) {
   app.parts.forEach(function (p) {
     if (!p.visible) return;
     var b = p.worldBounds;
-    if (b.min[0] < -0.01 || b.min[1] < -0.01 || b.max[0] > bed[0] + 0.01 || b.max[1] > bed[1] + 0.01) {
-      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ビルドプレート範囲外</span>');
+    if (outsideBedXY(b, bed, app.bedShape)) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ステージ範囲外</span>');
     }
     if (b.max[2] > bed[2] + 0.01) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 造形高さ超過 (' + fmt(b.max[2], 1) + ' mm)</span>');
@@ -3070,29 +3859,70 @@ function setupControls(app) {
     requestRender(app);
   });
 
-  function bedChanged() {
-    app.bed = [
-      Math.max(10, parseFloat($('#in-bed-x').value) || 220),
-      Math.max(10, parseFloat($('#in-bed-y').value) || 220),
-      Math.max(10, parseFloat($('#in-bed-z').value) || 250)
-    ];
-    app.R.gridDirty = true;
-    refreshWarnings(app);
-    requestRender(app);
-  }
-  ['#in-bed-x', '#in-bed-y', '#in-bed-z'].forEach(function (id) {
-    $(id).addEventListener('change', bedChanged);
-  });
+  // --- ステージ (造形エリア) ---
   var pSel = $('#sel-printer');
-  pSel.appendChild(el('option', { value: '-1', text: 'プリセットを選択' }));
+  pSel.appendChild(el('option', { value: '-1', text: 'プリセット' }));
   PRINTERS.forEach(function (pr, idx) { pSel.appendChild(el('option', { value: idx, text: pr.name })); });
   pSel.addEventListener('change', function (ev) {
     var idx = parseInt(ev.target.value, 10);
     if (idx < 0) return;
-    var b = PRINTERS[idx].bed;
-    $('#in-bed-x').value = b[0]; $('#in-bed-y').value = b[1]; $('#in-bed-z').value = b[2];
-    bedChanged();
+    var pr = PRINTERS[idx];
+    app.bedShape = pr.shape || 'rect';
+    app.bed = pr.bed.slice();
+    syncBedInputs(app);
+    applyBedChange(app);
   });
+  $('#sel-bed-shape').addEventListener('change', function () {
+    app.bedShape = $('#sel-bed-shape').value;
+    syncBedInputs(app);
+    readBedInputs(app);
+    applyBedChange(app);
+  });
+  ['#in-bed-x', '#in-bed-y', '#in-bed-z', '#in-bed-d', '#in-grid-step'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      readBedInputs(app);
+      applyBedChange(app);
+    });
+  });
+  $('#btn-bed-fit').addEventListener('click', function () {
+    var b = sceneBounds(app.parts, true);
+    if (!b) { setStatus(app, 'パーツがありません。'); return; }
+    var margin = parseFloat($('#in-margin').value) || 5;
+    if (app.bedShape === 'circle') {
+      var cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+      var r = 0;
+      for (var i = 0; i < 4; i++) {
+        var x = (i & 1) ? b.max[0] : b.min[0], y = (i & 2) ? b.max[1] : b.min[1];
+        r = Math.max(r, Math.hypot(x - cx, y - cy));
+      }
+      var d = Math.ceil((r + margin) * 2);
+      app.bed = [d, d, Math.max(1, Math.ceil(b.max[2] + margin))];
+    } else {
+      app.bed = [
+        Math.max(1, Math.ceil(b.size[0] + margin * 2)),
+        Math.max(1, Math.ceil(b.size[1] + margin * 2)),
+        Math.max(1, Math.ceil(b.max[2] + margin))
+      ];
+    }
+    syncBedInputs(app);
+    applyBedChange(app);
+    // モデルをステージ中央へ寄せる
+    app.parts.forEach(function (p) { if (p.visible) centerPartOnBed(p, app.bed); });
+    if (app.parts.filter(function (p) { return p.visible; }).length > 1) {
+      arrangeParts(app.parts, app.bed, parseFloat($('#in-margin').value) || 5);
+    }
+    fitView(app);
+    refreshAll(app);
+  });
+  $('#btn-bed-reset').addEventListener('click', function () {
+    app.bedShape = 'rect';
+    app.bed = [220, 220, 250];
+    app.gridStep = 10;
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  applyBedFromURL(app);
+  syncBedInputs(app);
 
   // --- 断面タブ ---
   buildClipControls(app);
@@ -3330,12 +4160,6 @@ function updateClipRanges(app) {
 // 断面輪郭
 // ---------------------------------------------------------------------------
 
-function sliceRotation(axis) {
-  var v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axis];
-  var q = Quat.fromUnitVectors(v, [0, 0, 1]);
-  return M4.compose(M4.create(), [0, 0, 0], q, [1, 1, 1]);
-}
-
 function computeSlice(app) {
   var axis = parseInt($('#sel-slice-axis').value, 10);
   var value = parseFloat($('#in-slice-pos').value) || 0;
@@ -3532,8 +4356,7 @@ function runCollisionCheck(app) {
   app.parts.forEach(function (p) {
     if (!p.visible) return;
     var b = p.worldBounds;
-    var outside = b.min[0] < -0.01 || b.min[1] < -0.01 || b.max[0] > app.bed[0] + 0.01 ||
-      b.max[1] > app.bed[1] + 0.01 || b.max[2] > app.bed[2] + 0.01;
+    var outside = outsideBedXY(b, app.bed, app.bedShape) || b.max[2] > app.bed[2] + 0.01;
     if (outside) out.push(p.name);
   });
   var hits = res.filter(function (c) { return c.intersect; });
@@ -3603,6 +4426,261 @@ function exportReport(app) {
   setStatus(app, 'レポートを書き出しました。');
 }
 
+// ---------------------------------------------------------------------------
+// ステージ (造形エリア) の設定
+// ---------------------------------------------------------------------------
+
+function readBedInputs(app) {
+  var z = Math.max(1, parseFloat($('#in-bed-z').value) || 250);
+  if (app.bedShape === 'circle') {
+    var d = Math.max(1, parseFloat($('#in-bed-d').value) || 220);
+    app.bed = [d, d, z];
+  } else {
+    app.bed = [
+      Math.max(1, parseFloat($('#in-bed-x').value) || 220),
+      Math.max(1, parseFloat($('#in-bed-y').value) || 220),
+      z
+    ];
+  }
+  app.gridStep = clamp(parseFloat($('#in-grid-step').value) || 10, 0.5, 500);
+}
+
+function syncBedInputs(app) {
+  $('#sel-bed-shape').value = app.bedShape;
+  $('#row-bed-rect').hidden = app.bedShape === 'circle';
+  $('#row-bed-circle').hidden = app.bedShape !== 'circle';
+  $('#in-bed-x').value = fmt(app.bed[0], 1);
+  $('#in-bed-y').value = fmt(app.bed[1], 1);
+  $('#in-bed-d').value = fmt(app.bed[0], 1);
+  $('#in-bed-z').value = fmt(app.bed[2], 1);
+  $('#in-grid-step').value = fmt(app.gridStep, 1);
+  $('#bed-summary').textContent = app.bedShape === 'circle'
+    ? 'φ' + fmt(app.bed[0], 0) + ' × H' + fmt(app.bed[2], 0)
+    : fmt(app.bed[0], 0) + ' × ' + fmt(app.bed[1], 0) + ' × ' + fmt(app.bed[2], 0);
+}
+
+function applyBedChange(app) {
+  app.R.gridDirty = true;
+  syncBedInputs(app);
+  updateBedURL(app);
+  refreshWarnings(app);
+  updateClipRanges(app);
+  requestRender(app);
+}
+
+// ステージ設定を URL に反映する (ブックマークで再現できるようにする)
+function updateBedURL(app) {
+  try {
+    var v = app.bedShape === 'circle'
+      ? 'circle:' + fmt(app.bed[0], 1) + 'x' + fmt(app.bed[2], 1)
+      : fmt(app.bed[0], 1) + 'x' + fmt(app.bed[1], 1) + 'x' + fmt(app.bed[2], 1);
+    var url = new URL(window.location.href);
+    url.searchParams.set('bed', v);
+    if (app.gridStep !== 10) url.searchParams.set('grid', fmt(app.gridStep, 1));
+    else url.searchParams.delete('grid');
+    window.history.replaceState(null, '', url.toString());
+  } catch (e) { /* file:// などで失敗する場合は無視する */ }
+}
+
+function applyBedFromURL(app) {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var bed = params.get('bed');
+    if (bed) {
+      var circle = /^circle:/i.test(bed);
+      var nums = bed.replace(/^circle:/i, '').split(/[x,]/).map(parseFloat).filter(function (n) { return isFinite(n) && n > 0; });
+      if (circle && nums.length >= 1) {
+        app.bedShape = 'circle';
+        app.bed = [nums[0], nums[0], nums[1] || app.bed[2]];
+      } else if (nums.length >= 2) {
+        app.bedShape = 'rect';
+        app.bed = [nums[0], nums[1], nums[2] || app.bed[2]];
+      }
+    }
+    var grid = parseFloat(params.get('grid'));
+    if (isFinite(grid) && grid > 0) app.gridStep = clamp(grid, 0.5, 500);
+  } catch (e) { /* 解析できない場合は既定値のまま */ }
+}
+
+// ===== 97_print.js =====
+// ---------------------------------------------------------------------------
+// 図面タブ (実寸 PDF / SVG 出力) の配線
+// ---------------------------------------------------------------------------
+
+function setupPrintControls(app) {
+  var sel = $('#sel-paper');
+  PAPER_SIZES.forEach(function (p, idx) {
+    sel.appendChild(el('option', { value: idx, text: p.name + ' (' + p.w + ' × ' + p.h + ' mm)' }));
+  });
+  sel.value = '0';
+
+  $('#btn-print-pdf').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { exportDrawingPDF(app); });
+  });
+  $('#btn-print-svg').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { exportDrawingSVG(app); });
+  });
+  $('#btn-print-preview').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { previewDrawings(app); });
+  });
+  $$('#print-views input').forEach(function (c) {
+    c.addEventListener('change', function () { updatePrintTable(app); });
+  });
+  ['#sel-paper', '#sel-paper-orient', '#in-print-margin', '#in-print-overlap', '#sel-print-scale',
+    '#chk-print-feature', '#chk-print-dims', '#sel-print-target'].forEach(function (id) {
+      $(id).addEventListener('change', function () { updatePrintTable(app); });
+    });
+  updatePrintTable(app);
+}
+
+function printOptions(app) {
+  var paper = PAPER_SIZES[parseInt($('#sel-paper').value, 10) || 0];
+  return {
+    paper: paper,
+    landscape: $('#sel-paper-orient').value === 'landscape',
+    margin: clamp(parseFloat($('#in-print-margin').value) || 0, 0, 40),
+    overlap: clamp(parseFloat($('#in-print-overlap').value) || 0, 0, 50),
+    scale: parseFloat($('#sel-print-scale').value) || 1,
+    feature: $('#chk-print-feature').checked,
+    dimensions: $('#chk-print-dims').checked,
+    grid: $('#chk-print-grid').checked,
+    gridStep: app.gridStep,
+    title: printTitle(app)
+  };
+}
+
+function printTitle(app) {
+  var p = selectedPart(app);
+  if ($('#sel-print-target').value === 'all' || !p) return 'scene';
+  return p.name;
+}
+
+function printTargets(app) {
+  var mode = $('#sel-print-target').value;
+  var p = selectedPart(app);
+  if (mode === 'selected' && p) return [p];
+  return app.parts.filter(function (x) { return x.visible; });
+}
+
+function selectedPrintViews() {
+  return $$('#print-views input').filter(function (c) { return c.checked; })
+    .map(function (c) { return c.value; });
+}
+
+// 選択された図を組み立てる
+function collectDrawings(app) {
+  var parts = printTargets(app);
+  if (!parts.length) throw new Error('対象のパーツがありません');
+  var opts = printOptions(app);
+  var keys = selectedPrintViews();
+  if (!keys.length) throw new Error('出力する図を 1 つ以上選んでください');
+  var out = [];
+  for (var i = 0; i < keys.length; i++) {
+    var d;
+    if (keys[i] === 'section') {
+      var axis = parseInt($('#sel-slice-axis').value, 10);
+      var value = parseFloat($('#in-slice-pos').value) || 0;
+      d = buildSectionDrawing(parts, axis, value);
+      if (!d) throw new Error('指定位置に断面がありません (断面タブで位置を確認してください)');
+    } else {
+      d = buildViewDrawing(parts, keys[i], { feature: opts.feature });
+    }
+    if (d) out.push(d);
+  }
+  if (!out.length) throw new Error('図面を生成できませんでした');
+  return out;
+}
+
+function updatePrintTable(app) {
+  var t = $('#tbl-print');
+  t.innerHTML = '';
+  var parts = printTargets(app);
+  if (!parts.length) { t.appendChild(kvRow('-', 'パーツがありません')); return; }
+  var opts = printOptions(app);
+  var keys = selectedPrintViews();
+  if (!keys.length) { t.appendChild(kvRow('-', '図を選んでください')); return; }
+  var b = sceneBounds(parts, false);
+  var pw = opts.landscape ? opts.paper.h : opts.paper.w;
+  var ph = opts.landscape ? opts.paper.w : opts.paper.h;
+  t.appendChild(kvRow('対象', parts.length === 1 ? parts[0].name : parts.length + ' パーツ'));
+  t.appendChild(kvRow('外形 (mm)', fmt(b.size[0], 1) + ' × ' + fmt(b.size[1], 1) + ' × ' + fmt(b.size[2], 1)));
+  t.appendChild(kvRow('用紙', opts.paper.name + ' ' + (opts.landscape ? '横' : '縦') +
+    ' (' + fmt(pw, 0) + ' × ' + fmt(ph, 0) + ')'));
+  // 概算のページ数 (輪郭抽出を行わず外形から見積もる)
+  var est = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var dims = keys[i] === 'section' ? [b.size[0], b.size[1]] : viewExtent(keys[i], b);
+    est += estimatePages(dims[0], dims[1], opts, pw, ph);
+  }
+  t.appendChild(kvRow('推定ページ数', String(est), est > 4 ? 'warn' : ''));
+  t.appendChild(kvRow('倍率', opts.scale === 1 ? '1:1 (実寸)' : opts.scale + ' 倍'));
+}
+
+function viewExtent(key, b) {
+  var v = DRAW_VIEWS[key];
+  if (!v) return [b.size[0], b.size[1]];
+  return [b.size[v.uAxis], b.size[v.vAxis]];
+}
+
+function estimatePages(wMm, hMm, opts, paperW, paperH) {
+  var dimPad = opts.dimensions === false ? 2 : 16;
+  var cw = paperW - opts.margin * 2;
+  var ch = paperH - opts.margin * 2 - PAGE_HEADER_MM - PAGE_FOOTER_MM;
+  if (cw <= 20 || ch <= 20) return 0;
+  var W = (wMm + dimPad) * opts.scale, H = (hMm + dimPad) * opts.scale;
+  var cols = W <= cw ? 1 : Math.ceil((W - opts.overlap) / (cw - opts.overlap));
+  var rows = H <= ch ? 1 : Math.ceil((H - opts.overlap) / (ch - opts.overlap));
+  return Math.max(1, cols) * Math.max(1, rows);
+}
+
+function exportDrawingPDF(app) {
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  opts.note = new Date().toISOString().slice(0, 10);
+  var bytes = renderDrawingsToPDF(drawings, opts);
+  var name = sanitizeFileName(opts.title) + '_1to1.pdf';
+  saveBlob(new Blob([bytes], { type: 'application/pdf' }), name);
+  setStatus(app, name + ' を書き出しました。100% (等倍) で印刷し、100 mm 基準線で確認してください。');
+  updatePrintTable(app);
+}
+
+function exportDrawingSVG(app) {
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  for (var i = 0; i < drawings.length; i++) {
+    var svg = renderDrawingToSVG(drawings[i], opts);
+    var name = sanitizeFileName(opts.title) + '_' + drawings[i].key + '_1to1.svg';
+    saveBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), name);
+  }
+  setStatus(app, drawings.length + ' 件の SVG を書き出しました (mm 指定のため実寸で印刷できます)。');
+}
+
+function previewDrawings(app) {
+  var host = $('#print-preview');
+  host.hidden = false;
+  host.innerHTML = '';
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  for (var i = 0; i < drawings.length; i++) {
+    var d = drawings[i];
+    var wrap = el('div', { class: 'preview-item' });
+    wrap.appendChild(el('div', {
+      class: 'hint', text: d.titleJp + '  ' + d.uLabel + ' ' + fmt(d.bounds.width, 2) +
+        ' × ' + d.vLabel + ' ' + fmt(d.bounds.height, 2) + ' mm  /  線分 ' + fmtInt(d.silhouette.length + d.feature.length)
+    }));
+    var img = el('div', { class: 'preview-svg' });
+    img.innerHTML = renderDrawingToSVG(d, opts).replace(/^<\?xml[^>]*\?>\s*/, '')
+      .replace(/width="[^"]*"/, 'width="100%"').replace(/height="[^"]*"/, '');
+    wrap.appendChild(img);
+    host.appendChild(wrap);
+  }
+  setStatus(app, 'プレビューを更新しました (画面上の表示は実寸ではありません)。');
+}
+
+function sanitizeFileName(s) {
+  return String(s).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60) || 'drawing';
+}
+
 // ===== 99_main.js =====
 // ---------------------------------------------------------------------------
 // エントリポイント
@@ -3612,6 +4690,8 @@ function createApp() {
   return {
     parts: [],
     bed: [220, 220, 250],
+    bedShape: 'rect',
+    gridStep: 10,
     margin: 5,
     layout: 'single',
     singleView: 'iso',
@@ -3654,7 +4734,12 @@ function main() {
     partVolume: partVolume, partArea: partArea,
     applyScale: applyScale, refreshAll: refreshAll, requestRender: requestRender,
     updateMeasureTable: updateMeasureTable, fitView: fitView,
-    projectToScreen: projectToScreen, pickAt: pickAt
+    projectToScreen: projectToScreen, pickAt: pickAt,
+    buildViewDrawing: buildViewDrawing, buildSectionDrawing: buildSectionDrawing,
+    renderDrawingsToPDF: renderDrawingsToPDF, renderDrawingToSVG: renderDrawingToSVG,
+    paginateDrawing: paginateDrawing, collectDrawings: collectDrawings,
+    printOptions: printOptions, outsideBedXY: outsideBedXY,
+    applyBedChange: applyBedChange, syncBedInputs: syncBedInputs
   };
   var canvas = document.getElementById('gl');
   try {
@@ -3665,10 +4750,11 @@ function main() {
     return;
   }
   app.overlay = document.getElementById('overlay');
+  setupControls(app);
+  setupPrintControls(app);
+  setupCanvasInteraction(app);
   app.orbitCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
   app.orthoCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
-  setupControls(app);
-  setupCanvasInteraction(app);
   fitView(app);
   refreshAll(app);
   setStatus(app, 'STL ファイルをドロップするか「STL を開く」から読み込んでください。');

@@ -368,6 +368,13 @@ function chainSegments(segs, tol) {
   return loops;
 }
 
+// 指定軸を Z に一致させる回転行列。任意軸の断面を sliceAtZ で扱うために用いる
+function sliceRotation(axis) {
+  var v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axis];
+  var q = Quat.fromUnitVectors(v, [0, 0, 1]);
+  return M4.compose(M4.create(), [0, 0, 0], q, [1, 1, 1]);
+}
+
 function polygonArea(points) {
   var a = 0;
   for (var i = 0, n = points.length; i < n; i++) {

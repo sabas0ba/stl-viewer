@@ -6,6 +6,8 @@ function createApp() {
   return {
     parts: [],
     bed: [220, 220, 250],
+    bedShape: 'rect',
+    gridStep: 10,
     margin: 5,
     layout: 'single',
     singleView: 'iso',
@@ -48,7 +50,12 @@ function main() {
     partVolume: partVolume, partArea: partArea,
     applyScale: applyScale, refreshAll: refreshAll, requestRender: requestRender,
     updateMeasureTable: updateMeasureTable, fitView: fitView,
-    projectToScreen: projectToScreen, pickAt: pickAt
+    projectToScreen: projectToScreen, pickAt: pickAt,
+    buildViewDrawing: buildViewDrawing, buildSectionDrawing: buildSectionDrawing,
+    renderDrawingsToPDF: renderDrawingsToPDF, renderDrawingToSVG: renderDrawingToSVG,
+    paginateDrawing: paginateDrawing, collectDrawings: collectDrawings,
+    printOptions: printOptions, outsideBedXY: outsideBedXY,
+    applyBedChange: applyBedChange, syncBedInputs: syncBedInputs
   };
   var canvas = document.getElementById('gl');
   try {
@@ -59,10 +66,11 @@ function main() {
     return;
   }
   app.overlay = document.getElementById('overlay');
+  setupControls(app);
+  setupPrintControls(app);
+  setupCanvasInteraction(app);
   app.orbitCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
   app.orthoCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
-  setupControls(app);
-  setupCanvasInteraction(app);
   fitView(app);
   refreshAll(app);
   setStatus(app, 'STL ファイルをドロップするか「STL を開く」から読み込んでください。');

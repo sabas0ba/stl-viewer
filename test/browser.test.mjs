@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +13,8 @@ const root = join(here, '..');
 const page_url = pathToFileURL(join(root, 'dist', 'stl-viewer.html')).href;
 const shots = join(root, 'dist', 'shots');
 mkdirSync(shots, { recursive: true });
+const downloads = join(root, 'dist', 'downloads');
+mkdirSync(downloads, { recursive: true });
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox']
@@ -242,6 +244,136 @@ check('上面をクリックすると 180 度反転して接地する',
   JSON.stringify({ before: quatBefore, after: layState }));
 
 await page.screenshot({ path: join(shots, '04-final.png') });
+
+// --- ステージ (造形エリア) ---
+await page.click('.tab[data-tab="place"]');
+await page.fill('#in-bed-x', '150');
+await page.dispatchEvent('#in-bed-x', 'change');
+await page.fill('#in-bed-y', '150');
+await page.dispatchEvent('#in-bed-y', 'change');
+await page.waitForTimeout(300);
+const bedState = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return { bed: a.bed.slice(), shape: a.bedShape, url: location.search, summary: document.querySelector('#bed-summary').textContent };
+});
+check('ステージのサイズを変更できる',
+  bedState.bed[0] === 150 && bedState.bed[1] === 150 && /150/.test(bedState.summary), JSON.stringify(bedState));
+check('ステージ設定が URL に反映される', /bed=150/.test(bedState.url), bedState.url);
+
+await page.selectOption('#sel-bed-shape', 'circle');
+await page.fill('#in-bed-d', '120');
+await page.dispatchEvent('#in-bed-d', 'change');
+await page.waitForTimeout(300);
+const circleState = await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  return {
+    shape: a.bedShape, bed: a.bed.slice(),
+    url: location.search,
+    rectVisible: !document.querySelector('#row-bed-rect').hidden,
+    // 円の外側にある矩形は範囲外と判定される
+    cornerOutside: V.outsideBedXY({ min: [0, 0, 0], max: [20, 20, 10] }, a.bed, a.bedShape),
+    centerInside: V.outsideBedXY({ min: [50, 50, 0], max: [70, 70, 10] }, a.bed, a.bedShape)
+  };
+});
+check('円形ステージへ切り替えられる',
+  circleState.shape === 'circle' && circleState.bed[0] === 120 && !circleState.rectVisible, JSON.stringify(circleState));
+check('円形ステージの範囲判定が働く',
+  circleState.cornerOutside === true && circleState.centerInside === false, JSON.stringify(circleState));
+check('円形設定が URL に反映される', /bed=circle/.test(circleState.url), circleState.url);
+await page.screenshot({ path: join(shots, '08-stage-circle.png') });
+
+// グリッド間隔の変更が描画に反映される
+const gridCounts = await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  const wide = buildGridLinesProbe(a, 25), narrow = buildGridLinesProbe(a, 5);
+  function buildGridLinesProbe(app, step) {
+    app.gridStep = step;
+    app.R.gridDirty = true;
+    V.requestRender(app);
+    return app.gridStep;
+  }
+  return { wide, narrow };
+});
+check('グリッド間隔を変更できる', gridCounts.narrow === 5, JSON.stringify(gridCounts));
+
+await page.selectOption('#sel-bed-shape', 'rect');
+await page.fill('#in-bed-x', '220');
+await page.dispatchEvent('#in-bed-x', 'change');
+await page.fill('#in-bed-y', '220');
+await page.dispatchEvent('#in-bed-y', 'change');
+await page.fill('#in-grid-step', '10');
+await page.dispatchEvent('#in-grid-step', 'change');
+await page.click('#btn-arrange');
+await page.waitForTimeout(300);
+
+// --- 図面 (実寸出力) ---
+await page.click('.tab[data-tab="print"]');
+await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  a.selection = a.parts.find((p) => p.name === 'bracket').id;
+  V.refreshAll(a);
+});
+await page.selectOption('#sel-print-target', 'selected');
+await page.waitForTimeout(200);
+const printInfo = await page.textContent('#tbl-print');
+check('図面タブに推定ページ数が出る', /推定ページ数/.test(printInfo) && !/NaN/.test(printInfo), printInfo.replace(/\s+/g, ' '));
+
+const drawInfo = await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
+  const p = a.parts.find((x) => x.name === 'bracket');
+  const front = V.buildViewDrawing([p], 'front', {});
+  const top = V.buildViewDrawing([p], 'top', {});
+  return {
+    frontW: front.bounds.width, frontH: front.bounds.height,
+    topW: top.bounds.width, topH: top.bounds.height,
+    size: p.worldBounds.size, segs: front.silhouette.length
+  };
+});
+check('輪郭の外形寸法がモデルの実寸と一致する',
+  Math.abs(drawInfo.frontW - drawInfo.size[0]) < 1e-4 &&
+  Math.abs(drawInfo.frontH - drawInfo.size[2]) < 1e-4 &&
+  Math.abs(drawInfo.topH - drawInfo.size[1]) < 1e-4, JSON.stringify(drawInfo));
+
+await page.click('#btn-print-preview');
+await page.waitForTimeout(600);
+const previewSvg = await page.$$('#print-preview svg');
+check('図面プレビューが表示される', previewSvg.length >= 2, String(previewSvg.length));
+await page.screenshot({ path: join(shots, '09-print.png') });
+
+const pdfDownload = page.waitForEvent('download', { timeout: 20000 });
+await page.click('#btn-print-pdf');
+const dl = await pdfDownload;
+const pdfPath = join(downloads, 'drawing.pdf');
+await dl.saveAs(pdfPath);
+const pdfBuf = readFileSync(pdfPath);
+const pdfText = pdfBuf.toString('latin1');
+check('PDF がダウンロードできる', /_1to1\.pdf$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+check('PDF ヘッダと EOF が正しい', pdfText.startsWith('%PDF-1.4') && pdfText.trimEnd().endsWith('%%EOF'), String(pdfBuf.length));
+check('PDF が A4 縦で 1:1 と記載される',
+  /MediaBox \[0 0 595\.276 841\.89\]/.test(pdfText) && /scale 1:1 \\\(actual size\\\)/.test(pdfText));
+const pageCount = (pdfText.match(/\/Type \/Page[^s]/g) || []).length;
+check('選択した 2 図が 2 ページ以上になる', pageCount >= 2, String(pageCount));
+
+const svgDownload = page.waitForEvent('download', { timeout: 20000 });
+await page.click('#btn-print-svg');
+const dlSvg = await svgDownload;
+const svgPath = join(downloads, 'drawing.svg');
+await dlSvg.saveAs(svgPath);
+const svgText = readFileSync(svgPath, 'utf8');
+check('SVG が mm 指定で出力される', /width="[\d.]+mm"/.test(svgText) && /<line /.test(svgText), dlSvg.suggestedFilename());
+
+// 断面図の出力
+await page.evaluate(() => {
+  document.querySelectorAll('#print-views input').forEach((c) => { c.checked = c.value === 'section'; });
+  document.querySelector('#sel-slice-axis').value = '2';
+  document.querySelector('#in-slice-pos').value = '3';
+});
+const secDownload = page.waitForEvent('download', { timeout: 20000 });
+await page.click('#btn-print-pdf');
+const dlSec = await secDownload;
+await dlSec.saveAs(join(downloads, 'section.pdf'));
+const secText = readFileSync(join(downloads, 'section.pdf'), 'utf8');
+check('断面図を PDF に出力できる', /SECTION Z = 3\.00 mm/.test(secText));
 
 // --- 描画結果が空でないことを確認 ---
 const pix = await page.evaluate(() => {

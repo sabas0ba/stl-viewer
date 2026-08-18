@@ -243,3 +243,19 @@ function trianglesIntersect(a, b, budget) {
   }
   return { hit: false, decided: step === 1 };
 }
+
+// ステージ (矩形 / 円形) の平面範囲に収まっているか判定する
+function outsideBedXY(bounds, bed, shape) {
+  var eps = 0.01;
+  if (shape === 'circle') {
+    var r = bed[0] / 2, cx = r, cy = bed[1] / 2;
+    for (var i = 0; i < 4; i++) {
+      var x = (i & 1) ? bounds.max[0] : bounds.min[0];
+      var y = (i & 2) ? bounds.max[1] : bounds.min[1];
+      if (Math.hypot(x - cx, y - cy) > r + eps) return true;
+    }
+    return false;
+  }
+  return bounds.min[0] < -eps || bounds.min[1] < -eps ||
+    bounds.max[0] > bed[0] + eps || bounds.max[1] > bed[1] + eps;
+}

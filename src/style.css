@@ -175,3 +175,11 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
   #right { order: 2; width: 100%; border-left: none; }
   #viewport { order: 1; min-height: 42vh; }
 }
+
+.print-preview { margin-top: 8px; }
+.preview-item { margin-bottom: 10px; }
+.preview-svg {
+  background: #fff; border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px; overflow: hidden;
+}
+.preview-svg svg { display: block; max-width: 100%; height: auto; }

@@ -29,9 +29,12 @@ test/make-fixtures.mjs 検証用 STL の生成
 | 帯 | 内容 | DOM/WebGL 依存 |
 | --- | --- | --- |
 | 00-30 | ユーティリティ、線形代数、STL 入出力、幾何解析 | なし (単体テスト対象) |
-| 50-80 | WebGL2 ラッパ、カメラ、シーン、描画 | あり |
+| 40-42 | PDF ライタ、実寸図面 (輪郭抽出・用紙割り付け・SVG) | なし (単体テスト対象) |
+| 50-60 | WebGL2 ラッパ、シェーダ、カメラ | あり |
+| 70 | パーツ / シーン / ステージ判定 | なし (単体テスト対象) |
+| 80 | 描画 (ビューポート、断面キャップ、寸法オーバーレイ) | あり |
 | 85 | 姿勢評価 | なし (単体テスト対象) |
-| 90-99 | UI 配線、エントリポイント | あり |
+| 90-99 | UI 配線、図面タブ、エントリポイント | あり |
 
 ## コーディング規約
 
@@ -42,6 +45,9 @@ test/make-fixtures.mjs 検証用 STL の生成
 - 座標系は X 右 / Y 奥 / Z 上、単位 mm、Z=0 がビルドプレート面。この前提を崩さない。
 - 数値計算を変更した場合は `test/core.test.mjs` に検証値付きのテストを追加する
   (解析解が分かる形状で期待値を書くこと)。
+- PDF 出力に手を入れた場合は `test/pdf-scale.test.mjs` (300dpi でラスタ化して実寸を計測)
+  を必ず通すこと。PDF は無圧縮・ASCII のみで生成し、xref のバイトオフセットが
+  壊れないよう `serializePDF` の出力順序を変えないこと。
 - 描画・UI を変更した場合は `test/browser.test.mjs` に確認を追加し、
   スクリーンショット (`dist/shots/`) で目視確認する。
 - コミットメッセージは Conventional Commits。
@@ -52,6 +58,7 @@ test/make-fixtures.mjs 検証用 STL の生成
 ```sh
 node build.mjs                 # dist/ を更新 (ソース変更後は必ず実行してコミット)
 node test/core.test.mjs        # 単体テスト
+node test/pdf-scale.test.mjs   # PDF 実寸検証 (poppler-utils が必要)
 node test/make-fixtures.mjs    # 検証用 STL (初回のみ)
 NODE_PATH="$(npm root)" node test/browser.test.mjs   # 結合テスト
 ```
