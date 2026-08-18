@@ -1,0 +1,777 @@
+// ---------------------------------------------------------------------------
+// パネル操作の配線
+// ---------------------------------------------------------------------------
+
+function setupControls(app) {
+  var i;
+
+  // --- ファイル ---
+  $('#btn-open').addEventListener('click', function () { $('#file-input').click(); });
+  $('#file-input').addEventListener('change', function (ev) {
+    loadFiles(app, ev.target.files);
+    ev.target.value = '';
+  });
+  var vpEl = $('#viewport');
+  ['dragenter', 'dragover'].forEach(function (t) {
+    document.addEventListener(t, function (ev) { ev.preventDefault(); vpEl.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    document.addEventListener(t, function (ev) {
+      ev.preventDefault();
+      if (t === 'drop' || ev.target === document.documentElement) vpEl.classList.remove('dragover');
+    });
+  });
+  document.addEventListener('drop', function (ev) {
+    if (ev.dataTransfer && ev.dataTransfer.files.length) loadFiles(app, ev.dataTransfer.files);
+  });
+
+  // --- レイアウト / 視点 ---
+  function setLayout(mode) {
+    app.layout = mode;
+    $('#btn-layout-single').classList.toggle('active', mode === 'single');
+    $('#btn-layout-quad').classList.toggle('active', mode === 'quad');
+    $('#view-preset-group').style.opacity = mode === 'quad' ? 0.4 : 1;
+    requestRender(app);
+  }
+  $('#btn-layout-single').addEventListener('click', function () { setLayout('single'); });
+  $('#btn-layout-quad').addEventListener('click', function () { setLayout('quad'); });
+  setLayout('single');
+
+  $('#sel-view').addEventListener('change', function (ev) {
+    app.singleView = ev.target.value;
+    app.layout = 'single';
+    setLayout('single');
+  });
+  $('#sel-shade').addEventListener('change', function (ev) {
+    app.shadeMode = parseInt(ev.target.value, 10);
+    requestRender(app);
+  });
+  $('#btn-fit').addEventListener('click', function () { fitView(app); });
+  $('#btn-png').addEventListener('click', function () { exportPNG(app); });
+  $('#btn-export').addEventListener('click', function () { exportSTL(app); });
+  $('#btn-report').addEventListener('click', function () { exportReport(app); });
+
+  // --- タブ ---
+  $$('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      $$('.tab').forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      $$('.tabpanel').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== tab.getAttribute('data-tab'); });
+    });
+  });
+
+  // --- 計測タブ ---
+  var mSel = $('#sel-material');
+  MATERIALS.forEach(function (m, idx) {
+    mSel.appendChild(el('option', { value: idx, text: m.name + ' (' + m.density + ' g/cm³)' }));
+  });
+  mSel.addEventListener('change', function () { updateMass(app); });
+  $('#in-infill').addEventListener('input', function () { updateMass(app); });
+
+  $('#btn-scale-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var s = (parseFloat($('#in-scale').value) || 100) / 100;
+    applyScale(app, p, [s, s, s]);
+  });
+  $('#btn-inch').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    applyScale(app, p, [p.scale[0] * 25.4, p.scale[1] * 25.4, p.scale[2] * 25.4]);
+  });
+  $('#btn-scale-reset').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    applyScale(app, p, [1, 1, 1]);
+  });
+  $('#btn-fit-size').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var axis = parseInt($('#sel-fit-axis').value, 10);
+    var target = parseFloat($('#in-fit-size').value);
+    if (!target || target <= 0) return;
+    var cur = p.worldBounds.size[axis];
+    if (cur < 1e-9) return;
+    var f = target / cur;
+    applyScale(app, p, [p.scale[0] * f, p.scale[1] * f, p.scale[2] * f]);
+  });
+
+  $('#btn-measure').addEventListener('click', function () {
+    setMode(app, app.mode === 'measure' ? null : 'measure');
+    if (app.mode !== 'measure') { /* 終了時は結果を残す */ }
+  });
+  $('#btn-measure-clear').addEventListener('click', function () {
+    app.measure.points = [];
+    updateMeasureTable(app);
+    requestRender(app);
+  });
+  updateMeasureTable(app);
+
+  // --- 表示タブ ---
+  $('#in-overhang').addEventListener('input', function (ev) {
+    app.overhangDeg = parseFloat(ev.target.value);
+    $('#overhang-val').textContent = app.overhangDeg + '°';
+    requestRender(app);
+  });
+  $('#btn-overhang-calc').addEventListener('click', function () {
+    withBusy(app, '面積を集計中...', function () { computeOverhangTable(app); });
+  });
+  function bindCheck(id, key, after) {
+    $(id).addEventListener('change', function (ev) {
+      app[key] = ev.target.checked;
+      if (after) after();
+      requestRender(app);
+    });
+  }
+  bindCheck('#chk-bed', 'showBed');
+  bindCheck('#chk-dims', 'showDims');
+  bindCheck('#chk-bbox', 'showBBox');
+  bindCheck('#chk-ghost', 'ghostOthers');
+  bindCheck('#chk-xray', 'xray');
+  $('#chk-persp').addEventListener('change', function (ev) {
+    app.orbitCam.persp = ev.target.checked;
+    requestRender(app);
+  });
+
+  // --- ステージ (造形エリア) ---
+  var pSel = $('#sel-printer');
+  pSel.appendChild(el('option', { value: '-1', text: 'プリセット' }));
+  PRINTERS.forEach(function (pr, idx) { pSel.appendChild(el('option', { value: idx, text: pr.name })); });
+  pSel.addEventListener('change', function (ev) {
+    var idx = parseInt(ev.target.value, 10);
+    if (idx < 0) return;
+    var pr = PRINTERS[idx];
+    app.bedShape = pr.shape || 'rect';
+    app.bed = pr.bed.slice();
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  $('#sel-bed-shape').addEventListener('change', function () {
+    app.bedShape = $('#sel-bed-shape').value;
+    syncBedInputs(app);
+    readBedInputs(app);
+    applyBedChange(app);
+  });
+  ['#in-bed-x', '#in-bed-y', '#in-bed-z', '#in-bed-d', '#in-grid-step'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      readBedInputs(app);
+      applyBedChange(app);
+    });
+  });
+  $('#btn-bed-fit').addEventListener('click', function () {
+    var b = sceneBounds(app.parts, true);
+    if (!b) { setStatus(app, 'パーツがありません。'); return; }
+    var margin = parseFloat($('#in-margin').value) || 5;
+    if (app.bedShape === 'circle') {
+      var cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+      var r = 0;
+      for (var i = 0; i < 4; i++) {
+        var x = (i & 1) ? b.max[0] : b.min[0], y = (i & 2) ? b.max[1] : b.min[1];
+        r = Math.max(r, Math.hypot(x - cx, y - cy));
+      }
+      var d = Math.ceil((r + margin) * 2);
+      app.bed = [d, d, Math.max(1, Math.ceil(b.max[2] + margin))];
+    } else {
+      app.bed = [
+        Math.max(1, Math.ceil(b.size[0] + margin * 2)),
+        Math.max(1, Math.ceil(b.size[1] + margin * 2)),
+        Math.max(1, Math.ceil(b.max[2] + margin))
+      ];
+    }
+    syncBedInputs(app);
+    applyBedChange(app);
+    // モデルをステージ中央へ寄せる
+    app.parts.forEach(function (p) { if (p.visible) centerPartOnBed(p, app.bed); });
+    if (app.parts.filter(function (p) { return p.visible; }).length > 1) {
+      arrangeParts(app.parts, app.bed, parseFloat($('#in-margin').value) || 5);
+    }
+    fitView(app);
+    refreshAll(app);
+  });
+  $('#btn-bed-reset').addEventListener('click', function () {
+    app.bedShape = 'rect';
+    app.bed = [220, 220, 250];
+    app.gridStep = 10;
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  applyBedFromURL(app);
+  syncBedInputs(app);
+
+  // --- 断面タブ ---
+  buildClipControls(app);
+  $('#chk-cap').addEventListener('change', function (ev) {
+    app.clips.forEach(function (c) { c.cap = ev.target.checked; });
+    requestRender(app);
+  });
+  $('#btn-slice').addEventListener('click', function () {
+    withBusy(app, '断面を計算中...', function () { computeSlice(app); });
+  });
+  $('#btn-slice-prev').addEventListener('click', function () { stepSlice(app, -1); });
+  $('#btn-slice-next').addEventListener('click', function () { stepSlice(app, 1); });
+
+  // --- 向きタブ ---
+  $$('[data-rot]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var spec = btn.getAttribute('data-rot').split(',');
+      var axis = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[spec[0]];
+      rotateSelected(app, axis, parseFloat(spec[1]));
+    });
+  });
+  $('#btn-rot-apply').addEventListener('click', function () {
+    var axisIdx = parseInt($('#sel-rot-axis').value, 10);
+    var axis = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axisIdx];
+    rotateSelected(app, axis, parseFloat($('#in-rot-angle').value) || 0);
+  });
+  $('#btn-eul-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    p.quat = Quat.fromEulerDeg([
+      parseFloat($('#in-eul-x').value) || 0,
+      parseFloat($('#in-eul-y').value) || 0,
+      parseFloat($('#in-eul-z').value) || 0
+    ]);
+    updatePartMatrix(p);
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-lay').addEventListener('click', function () {
+    if (!selectedPart(app)) { setStatus(app, 'パーツを選択してください。'); return; }
+    setMode(app, app.mode === 'lay' ? null : 'lay');
+  });
+  $('#btn-drop').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-rot-reset').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    p.quat = [0, 0, 0, 1];
+    updatePartMatrix(p);
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-auto-orient').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
+    withBusy(app, '姿勢を探索中...', function () { runAutoOrient(app, p); });
+  });
+
+  // --- 配置タブ ---
+  $('#btn-pos-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var cx = (p.worldBounds.min[0] + p.worldBounds.max[0]) / 2;
+    var cy = (p.worldBounds.min[1] + p.worldBounds.max[1]) / 2;
+    p.pos[0] += (parseFloat($('#in-pos-x').value) || 0) - cx;
+    p.pos[1] += (parseFloat($('#in-pos-y').value) || 0) - cy;
+    updatePartMatrix(p);
+    refreshAll(app);
+  });
+  $('#btn-center').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    centerPartOnBed(p, app.bed);
+    refreshAll(app);
+  });
+  $('#btn-arrange').addEventListener('click', function () {
+    app.margin = parseFloat($('#in-margin').value) || 5;
+    arrangeParts(app.parts, app.bed, app.margin);
+    refreshAll(app);
+  });
+  $('#btn-duplicate').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var copy = createPart(p.name + ' (複製)', p.positions.slice(), p.fileSize, p.format);
+    copy.scale = p.scale.slice();
+    copy.quat = p.quat.slice();
+    copy.pos = [p.pos[0] + 10, p.pos[1] + 10, p.pos[2]];
+    updatePartMatrix(copy);
+    app.parts.push(copy);
+    app.selection = copy.id;
+    refreshAll(app);
+  });
+  $('#btn-delete').addEventListener('click', function () { deleteSelected(app); });
+  $('#btn-clear').addEventListener('click', function () {
+    app.parts.forEach(function (p) { disposePartGPU(app.R, p); });
+    app.parts = [];
+    app.selection = null;
+    app.collisionResult = null;
+    app.contourLines = null;
+    refreshAll(app);
+    setStatus(app, 'すべてのパーツを削除しました。');
+  });
+  $('#btn-collide').addEventListener('click', function () {
+    withBusy(app, '干渉を判定中...', function () { runCollisionCheck(app); });
+  });
+
+  // --- キーボード ---
+  window.addEventListener('keydown', function (ev) {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
+    if (ev.key === 'Escape') { setMode(app, null); }
+    else if (ev.key === 'Delete' || ev.key === 'Backspace') { deleteSelected(app); }
+    else if (ev.key === 'f' || ev.key === 'F') { fitView(app); }
+    else if (ev.key === 'q' || ev.key === 'Q') {
+      $(app.layout === 'quad' ? '#btn-layout-single' : '#btn-layout-quad').click();
+    } else if (/^[1-6]$/.test(ev.key)) {
+      var keys = ['iso', 'front', 'right', 'top', 'left', 'back'];
+      $('#sel-view').value = keys[parseInt(ev.key, 10) - 1];
+      $('#sel-view').dispatchEvent(new Event('change'));
+    }
+  });
+
+  window.addEventListener('resize', function () { requestRender(app); });
+}
+
+function deleteSelected(app) {
+  var p = selectedPart(app);
+  if (!p) return;
+  disposePartGPU(app.R, p);
+  app.parts = app.parts.filter(function (x) { return x !== p; });
+  app.selection = app.parts.length ? app.parts[0].id : null;
+  app.collisionResult = null;
+  refreshAll(app);
+}
+
+function applyScale(app, part, scale) {
+  part.scale = scale;
+  updatePartMatrix(part);
+  dropToBed(part);
+  refreshAll(app);
+  setStatus(app, '倍率を ' + fmt(scale[0] * 100, 2) + ' % に設定しました。');
+}
+
+function rotateSelected(app, axis, deg) {
+  var p = selectedPart(app);
+  if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
+  rotatePartAroundCenter(p, Quat.fromAxisAngle(axis, deg * Math.PI / 180));
+  refreshAll(app);
+}
+
+// ---------------------------------------------------------------------------
+// オーバーハング集計
+// ---------------------------------------------------------------------------
+
+function computeOverhangTable(app) {
+  var t = $('#tbl-overhang');
+  t.innerHTML = '';
+  var list = app.parts.filter(function (p) { return p.visible; });
+  if (!list.length) { t.appendChild(kvRow('-', 'パーツがありません')); return; }
+  var total = 0, over = 0, contact = 0, sampled = false;
+  list.forEach(function (p) {
+    var step = Math.max(1, Math.ceil(p.triangleCount / 300000));
+    var s = overhangStats(p.positions, p.matrix, app.overhangDeg, 0, 0.05, step);
+    total += s.totalArea; over += s.overhangArea; contact += s.contactArea;
+    if (s.sampled) sampled = true;
+  });
+  t.appendChild(kvRow('しきい値', app.overhangDeg + '° 超で要サポート'));
+  t.appendChild(kvRow('要サポート面積', fmt(over / 100, 2) + ' cm²', over > 0 ? 'warn' : 'ok'));
+  t.appendChild(kvRow('全表面積比', fmt(total > 0 ? over / total * 100 : 0, 1) + ' %'));
+  t.appendChild(kvRow('ベッド接地面積', fmt(contact / 100, 2) + ' cm²', contact > 0 ? 'ok' : 'warn'));
+  if (sampled) t.appendChild(kvRow('注記', '三角形を間引いた概算値'));
+}
+
+// ---------------------------------------------------------------------------
+// クリップ平面
+// ---------------------------------------------------------------------------
+
+function buildClipControls(app) {
+  var host = $('#clip-controls');
+  host.innerHTML = '';
+  var names = ['X', 'Y', 'Z'];
+  app.clips.forEach(function (clip, idx) {
+    var chk = el('input', { type: 'checkbox' });
+    var range = el('input', { type: 'range', min: 0, max: 100, step: 0.1, value: clip.value });
+    var num = el('input', { type: 'number', step: 0.5, value: clip.value, style: 'width:74px' });
+    var invBtn = el('button', { class: 'btn sm', text: '反転' });
+    chk.addEventListener('change', function () {
+      clip.enabled = chk.checked;
+      requestRender(app);
+    });
+    function setValue(v) {
+      clip.value = v;
+      range.value = v;
+      num.value = fmt(v, 2);
+      if (clip.enabled) requestRender(app);
+    }
+    range.addEventListener('input', function () { setValue(parseFloat(range.value)); });
+    num.addEventListener('change', function () { setValue(parseFloat(num.value) || 0); });
+    invBtn.addEventListener('click', function () {
+      clip.invert = !clip.invert;
+      invBtn.classList.toggle('active', clip.invert);
+      requestRender(app);
+    });
+    clip.ui = { range: range, num: num, chk: chk };
+    host.appendChild(el('div', { class: 'row' }, [
+      el('label', {}, [chk, document.createTextNode(' ' + names[idx] + ' 平面')]),
+      range, num, invBtn
+    ]));
+  });
+  updateClipRanges(app);
+}
+
+function updateClipRanges(app) {
+  var b = sceneBounds(app.parts, true);
+  if (!b) b = { min: [0, 0, 0], max: app.bed.slice() };
+  app.clips.forEach(function (clip, idx) {
+    if (!clip.ui) return;
+    var lo = b.min[idx], hi = b.max[idx];
+    if (hi - lo < 1e-6) { hi = lo + 1; }
+    clip.ui.range.min = lo;
+    clip.ui.range.max = hi;
+    clip.ui.range.step = Math.max((hi - lo) / 500, 0.01);
+    if (clip.value < lo || clip.value > hi) {
+      clip.value = (lo + hi) / 2;
+      clip.ui.range.value = clip.value;
+      clip.ui.num.value = fmt(clip.value, 2);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 断面輪郭
+// ---------------------------------------------------------------------------
+
+function computeSlice(app) {
+  var axis = parseInt($('#sel-slice-axis').value, 10);
+  var value = parseFloat($('#in-slice-pos').value) || 0;
+  var Rm = sliceRotation(axis);
+  var invR = M4.invert(M4.create(), Rm);
+  var loops = [];
+  app.parts.forEach(function (p) {
+    if (!p.visible) return;
+    var m = M4.mul(M4.create(), Rm, p.matrix);
+    var ls = sliceAtZ(p.positions, m, value);
+    ls.forEach(function (l) { loops.push(l); });
+  });
+  app.slice = { axis: axis, value: value, loops: loops };
+  // 3D 表示用の輪郭線
+  var lines = [];
+  loops.forEach(function (l) {
+    var pts = l.points;
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var a = M4.xformPoint([0, 0, 0], invR, [pts[i][0], pts[i][1], value]);
+      var b = M4.xformPoint([0, 0, 0], invR, [pts[i + 1][0], pts[i + 1][1], value]);
+      lines.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    }
+    if (l.closed && pts.length > 2) {
+      var a2 = M4.xformPoint([0, 0, 0], invR, [pts[pts.length - 1][0], pts[pts.length - 1][1], value]);
+      var b2 = M4.xformPoint([0, 0, 0], invR, [pts[0][0], pts[0][1], value]);
+      lines.push(a2[0], a2[1], a2[2], b2[0], b2[1], b2[2]);
+    }
+  });
+  app.contourLines = lines;
+  drawSliceCanvas(app);
+  updateSliceTable(app);
+  requestRender(app);
+}
+
+function stepSlice(app, dir) {
+  var step = parseFloat($('#in-slice-step').value) || 0.2;
+  var pos = (parseFloat($('#in-slice-pos').value) || 0) + dir * step;
+  $('#in-slice-pos').value = fmt(pos, 3);
+  computeSlice(app);
+}
+
+function pointInPolygon(pt, poly) {
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / ((yj - yi) || 1e-20) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function sliceMetrics(loops) {
+  var closed = loops.filter(function (l) { return l.closed && l.points.length > 2; });
+  var open = loops.length - closed.length;
+  var perimeter = 0;
+  loops.forEach(function (l) { perimeter += polylineLength(l.points, l.closed); });
+  var area = 0;
+  if (closed.length <= 300) {
+    closed.forEach(function (l, idx) {
+      var depth = 0;
+      for (var k = 0; k < closed.length; k++) {
+        if (k === idx) continue;
+        if (pointInPolygon(l.points[0], closed[k].points)) depth++;
+      }
+      var a = Math.abs(polygonArea(l.points));
+      area += (depth % 2 === 0) ? a : -a;
+    });
+  } else {
+    closed.forEach(function (l) { area += polygonArea(l.points); });
+    area = Math.abs(area);
+  }
+  return { closed: closed.length, open: open, perimeter: perimeter, area: area };
+}
+
+function updateSliceTable(app) {
+  var t = $('#tbl-slice');
+  t.innerHTML = '';
+  if (!app.slice) { t.appendChild(kvRow('-', '未計算')); return; }
+  var m = sliceMetrics(app.slice.loops);
+  var axisName = ['X', 'Y', 'Z'][app.slice.axis];
+  t.appendChild(kvRow('切断位置', axisName + ' = ' + fmt(app.slice.value, 3) + ' mm'));
+  t.appendChild(kvRow('断面積', fmt(m.area, 2) + ' mm²'));
+  t.appendChild(kvRow('輪郭長', fmt(m.perimeter, 2) + ' mm'));
+  t.appendChild(kvRow('閉ループ数', fmtInt(m.closed)));
+  t.appendChild(kvRow('開ループ数', fmtInt(m.open), m.open ? 'warn' : ''));
+  if (m.open) t.appendChild(kvRow('注記', 'メッシュの穴により輪郭が閉じません'));
+}
+
+function drawSliceCanvas(app) {
+  var cv = $('#slice-canvas');
+  var ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#101317';
+  ctx.fillRect(0, 0, W, H);
+  if (!app.slice || !app.slice.loops.length) {
+    ctx.fillStyle = '#9aa1ad';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('この位置に断面はありません', 12, 20);
+    return;
+  }
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  app.slice.loops.forEach(function (l) {
+    l.points.forEach(function (p) {
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+    });
+  });
+  var pad = 16;
+  var sx = (W - pad * 2) / Math.max(maxX - minX, 1e-6);
+  var sy = (H - pad * 2) / Math.max(maxY - minY, 1e-6);
+  var s = Math.min(sx, sy);
+  var ox = pad + ((W - pad * 2) - (maxX - minX) * s) / 2;
+  var oy = pad + ((H - pad * 2) - (maxY - minY) * s) / 2;
+  function tx(p) { return [ox + (p[0] - minX) * s, H - (oy + (p[1] - minY) * s)]; }
+
+  var path = new Path2D();
+  app.slice.loops.forEach(function (l) {
+    if (!l.closed || l.points.length < 3) return;
+    var p0 = tx(l.points[0]);
+    path.moveTo(p0[0], p0[1]);
+    for (var i = 1; i < l.points.length; i++) {
+      var p = tx(l.points[i]);
+      path.lineTo(p[0], p[1]);
+    }
+    path.closePath();
+  });
+  ctx.fillStyle = 'rgba(79,157,224,0.35)';
+  ctx.fill(path, 'evenodd');
+  ctx.strokeStyle = '#7fd6ff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke(path);
+
+  // 開いた輪郭は警告色で描く
+  ctx.strokeStyle = '#e05f4f';
+  app.slice.loops.forEach(function (l) {
+    if (l.closed) return;
+    ctx.beginPath();
+    var p0 = tx(l.points[0]);
+    ctx.moveTo(p0[0], p0[1]);
+    for (var i = 1; i < l.points.length; i++) {
+      var p = tx(l.points[i]);
+      ctx.lineTo(p[0], p[1]);
+    }
+    ctx.stroke();
+  });
+
+  // スケールバー
+  var axisName = ['X', 'Y', 'Z'][app.slice.axis];
+  ctx.fillStyle = '#9aa1ad';
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillText(axisName + ' = ' + fmt(app.slice.value, 2) + ' mm', 8, 14);
+  ctx.fillText(fmt(maxX - minX, 1) + ' x ' + fmt(maxY - minY, 1) + ' mm', 8, H - 8);
+}
+
+// ---------------------------------------------------------------------------
+// 自動姿勢探索
+// ---------------------------------------------------------------------------
+
+function runAutoOrient(app, part) {
+  var results = searchOrientations(part, app.overhangDeg, 18);
+  var t = $('#tbl-orient');
+  t.innerHTML = '';
+  var head = el('tr', { class: 'sec' }, [
+    el('td', { text: '候補 (高さ / 要サポート)' }), el('td', { text: '接地' })
+  ]);
+  t.appendChild(head);
+  results.slice(0, 6).forEach(function (r, idx) {
+    var tr = el('tr', { class: 'orient-row' }, [
+      el('td', { text: (idx + 1) + '. ' + fmt(r.height, 1) + ' mm / ' + fmt(r.overhangArea / 100, 2) + ' cm²' }),
+      el('td', { text: fmt(r.contactArea / 100, 2) + ' cm²' })
+    ]);
+    tr.addEventListener('click', function () {
+      part.quat = r.quat.slice();
+      updatePartMatrix(part);
+      centerPartOnBed(part, app.bed);
+      refreshAll(app);
+      setStatus(app, '候補 ' + (idx + 1) + ' の姿勢を適用しました。');
+    });
+    t.appendChild(tr);
+  });
+  setStatus(app, results.length + ' 件の姿勢を評価しました。行をクリックで適用します。');
+}
+
+// ---------------------------------------------------------------------------
+// 干渉チェック
+// ---------------------------------------------------------------------------
+
+function runCollisionCheck(app) {
+  var t = $('#tbl-collide');
+  t.innerHTML = '';
+  var res = detectCollisions(app.parts);
+  app.collisionResult = res;
+  var out = [];
+  app.parts.forEach(function (p) {
+    if (!p.visible) return;
+    var b = p.worldBounds;
+    var outside = outsideBedXY(b, app.bed, app.bedShape) || b.max[2] > app.bed[2] + 0.01;
+    if (outside) out.push(p.name);
+  });
+  var hits = res.filter(function (c) { return c.intersect; });
+  t.appendChild(kvRow('干渉ペア', fmtInt(hits.length), hits.length ? 'warn' : 'ok'));
+  hits.forEach(function (c) { t.appendChild(kvRow(c.a.name, '↔ ' + c.b.name, 'warn')); });
+  var undecided = res.filter(function (c) { return !c.exact && !c.intersect; });
+  if (undecided.length) t.appendChild(kvRow('判定打ち切り', fmtInt(undecided.length) + ' ペア'));
+  t.appendChild(kvRow('領域外パーツ', out.length ? out.join(', ') : 'なし', out.length ? 'warn' : 'ok'));
+  refreshWarnings(app);
+}
+
+// ---------------------------------------------------------------------------
+// 書き出し
+// ---------------------------------------------------------------------------
+
+function exportSTL(app) {
+  var p = selectedPart(app);
+  var list = p ? [p] : app.parts.filter(function (x) { return x.visible; });
+  if (!list.length) { setStatus(app, '書き出す対象がありません。'); return; }
+  var buf = buildBinarySTL(list.map(function (x) {
+    return { positions: x.positions, matrix: x.matrix };
+  }), 'stl-viewer export');
+  var name = (p ? p.name : 'scene') + '_transformed.stl';
+  saveBlob(new Blob([buf], { type: 'model/stl' }), name);
+  setStatus(app, name + ' を書き出しました (現在の位置・姿勢・倍率を反映)。');
+}
+
+function exportPNG(app) {
+  renderFrame(app);
+  app.R.canvas.toBlob(function (blob) {
+    if (!blob) { setStatus(app, 'PNG を生成できませんでした。'); return; }
+    saveBlob(blob, 'stl-view.png');
+    setStatus(app, 'PNG を保存しました。');
+  }, 'image/png');
+}
+
+function exportReport(app) {
+  var lines = [];
+  lines.push('STL Viewer 計測レポート');
+  lines.push('生成: ' + new Date().toISOString());
+  lines.push('ビルドプレート: ' + app.bed.join(' x ') + ' mm');
+  lines.push('');
+  app.parts.forEach(function (p) {
+    var b = p.worldBounds;
+    var q = p.topology || {};
+    lines.push('[' + p.name + ']');
+    lines.push('  形式            : ' + p.format + ' / ' + fmtBytes(p.fileSize || 0));
+    lines.push('  外形寸法 (mm)   : ' + fmt(b.size[0], 3) + ' x ' + fmt(b.size[1], 3) + ' x ' + fmt(b.size[2], 3));
+    lines.push('  配置範囲 X      : ' + fmt(b.min[0], 3) + ' … ' + fmt(b.max[0], 3));
+    lines.push('  配置範囲 Y      : ' + fmt(b.min[1], 3) + ' … ' + fmt(b.max[1], 3));
+    lines.push('  配置範囲 Z      : ' + fmt(b.min[2], 3) + ' … ' + fmt(b.max[2], 3));
+    lines.push('  体積            : ' + fmt(partVolume(p) / 1000, 4) + ' cm3');
+    lines.push('  表面積          : ' + fmt(partArea(p) / 100, 3) + ' cm2');
+    lines.push('  三角形数        : ' + p.triangleCount);
+    lines.push('  倍率            : ' + fmt(p.scale[0] * 100, 3) + ' %');
+    lines.push('  姿勢 XYZ (deg)  : ' + Quat.toEulerDeg(p.quat).map(function (v) { return fmt(v, 2); }).join(', '));
+    lines.push('  水密性          : ' + (q.watertight ? 'OK' : 'NG'));
+    lines.push('  境界/非多様体   : ' + (q.boundaryEdges || 0) + ' / ' + (q.nonManifoldEdges || 0));
+    lines.push('  シェル数        : ' + (q.shells || 0));
+    var s = overhangStats(p.positions, p.matrix, app.overhangDeg, 0, 0.05,
+      Math.max(1, Math.ceil(p.triangleCount / 300000)));
+    lines.push('  要サポート面積  : ' + fmt(s.overhangArea / 100, 3) + ' cm2 (しきい値 ' + app.overhangDeg + ' deg)');
+    lines.push('  接地面積        : ' + fmt(s.contactArea / 100, 3) + ' cm2');
+    lines.push('');
+  });
+  saveBlob(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), 'stl-report.txt');
+  setStatus(app, 'レポートを書き出しました。');
+}
+
+// ---------------------------------------------------------------------------
+// ステージ (造形エリア) の設定
+// ---------------------------------------------------------------------------
+
+function readBedInputs(app) {
+  var z = Math.max(1, parseFloat($('#in-bed-z').value) || 250);
+  if (app.bedShape === 'circle') {
+    var d = Math.max(1, parseFloat($('#in-bed-d').value) || 220);
+    app.bed = [d, d, z];
+  } else {
+    app.bed = [
+      Math.max(1, parseFloat($('#in-bed-x').value) || 220),
+      Math.max(1, parseFloat($('#in-bed-y').value) || 220),
+      z
+    ];
+  }
+  app.gridStep = clamp(parseFloat($('#in-grid-step').value) || 10, 0.5, 500);
+}
+
+function syncBedInputs(app) {
+  $('#sel-bed-shape').value = app.bedShape;
+  $('#row-bed-rect').hidden = app.bedShape === 'circle';
+  $('#row-bed-circle').hidden = app.bedShape !== 'circle';
+  $('#in-bed-x').value = fmt(app.bed[0], 1);
+  $('#in-bed-y').value = fmt(app.bed[1], 1);
+  $('#in-bed-d').value = fmt(app.bed[0], 1);
+  $('#in-bed-z').value = fmt(app.bed[2], 1);
+  $('#in-grid-step').value = fmt(app.gridStep, 1);
+  $('#bed-summary').textContent = app.bedShape === 'circle'
+    ? 'φ' + fmt(app.bed[0], 0) + ' × H' + fmt(app.bed[2], 0)
+    : fmt(app.bed[0], 0) + ' × ' + fmt(app.bed[1], 0) + ' × ' + fmt(app.bed[2], 0);
+}
+
+function applyBedChange(app) {
+  app.R.gridDirty = true;
+  syncBedInputs(app);
+  updateBedURL(app);
+  refreshWarnings(app);
+  updateClipRanges(app);
+  requestRender(app);
+}
+
+// ステージ設定を URL に反映する (ブックマークで再現できるようにする)
+function updateBedURL(app) {
+  try {
+    var v = app.bedShape === 'circle'
+      ? 'circle:' + fmt(app.bed[0], 1) + 'x' + fmt(app.bed[2], 1)
+      : fmt(app.bed[0], 1) + 'x' + fmt(app.bed[1], 1) + 'x' + fmt(app.bed[2], 1);
+    var url = new URL(window.location.href);
+    url.searchParams.set('bed', v);
+    if (app.gridStep !== 10) url.searchParams.set('grid', fmt(app.gridStep, 1));
+    else url.searchParams.delete('grid');
+    window.history.replaceState(null, '', url.toString());
+  } catch (e) { /* file:// などで失敗する場合は無視する */ }
+}
+
+function applyBedFromURL(app) {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var bed = params.get('bed');
+    if (bed) {
+      var circle = /^circle:/i.test(bed);
+      var nums = bed.replace(/^circle:/i, '').split(/[x,]/).map(parseFloat).filter(function (n) { return isFinite(n) && n > 0; });
+      if (circle && nums.length >= 1) {
+        app.bedShape = 'circle';
+        app.bed = [nums[0], nums[0], nums[1] || app.bed[2]];
+      } else if (nums.length >= 2) {
+        app.bedShape = 'rect';
+        app.bed = [nums[0], nums[1], nums[2] || app.bed[2]];
+      }
+    }
+    var grid = parseFloat(params.get('grid'));
+    if (isFinite(grid) && grid > 0) app.gridStep = clamp(grid, 0.5, 500);
+  } catch (e) { /* 解析できない場合は既定値のまま */ }
+}
