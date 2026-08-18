@@ -1,0 +1,4770 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="STL を 3D プリント前に確認する単一 HTML のビューア。寸法・体積・三面図・断面・向きの変更・オーバーハング判定・複数パーツ配置に対応。ファイルはブラウザ内でのみ処理し外部送信しない。">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#16181c">
+<title>STL Viewer - 3D プリント前チェック</title>
+<style>
+:root {
+  --bg: #16181c;
+  --bg2: #1d2026;
+  --bg3: #23272f;
+  --fg: #e6e8ec;
+  --fg-dim: #9aa1ad;
+  --line: #333844;
+  --accent: #4f9de0;
+  --accent2: #e0904f;
+  --warn: #e05f4f;
+  --ok: #47b87c;
+  --font: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app { display: flex; flex-direction: column; height: 100%; }
+
+#topbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 12px; background: var(--bg2);
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.brand { font-weight: 600; letter-spacing: .02em; }
+.brand .sub { color: var(--fg-dim); font-weight: 400; margin-left: 8px; font-size: 11px; }
+.tb-group { display: flex; align-items: center; gap: 6px; }
+.tb-group.right { margin-left: auto; }
+.tb-label { color: var(--fg-dim); font-size: 11px; }
+
+main { display: flex; flex: 1; min-height: 0; }
+
+aside {
+  width: 268px; background: var(--bg2); border-right: 1px solid var(--line);
+  overflow-y: auto; padding: 10px; flex-shrink: 0;
+}
+#right { border-right: none; border-left: 1px solid var(--line); width: 306px; }
+
+#viewport { position: relative; flex: 1; min-width: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.vp-label { fill: rgba(230,232,236,.55); font-size: 11px; font-family: var(--font); }
+.dim-line { stroke: rgba(240,200,120,.85); stroke-width: 1; }
+.dim-ext { stroke: rgba(240,200,120,.35); stroke-width: 1; stroke-dasharray: 2 2; }
+.dim-label { fill: #f0c878; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.65); stroke-width: 3px; }
+.measure-label { fill: #7fd6ff; }
+
+.mode-hint {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  background: rgba(79,157,224,.92); color: #08111c; padding: 5px 12px;
+  border-radius: 4px; font-size: 12px; font-weight: 600;
+}
+.busy {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(10,12,16,.55); font-size: 13px; color: var(--fg);
+}
+
+#status {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 12px; background: var(--bg2); border-top: 1px solid var(--line);
+  color: var(--fg-dim); font-size: 11px;
+}
+
+button.btn {
+  background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  font-family: inherit;
+}
+button.btn:hover { background: #2c313b; }
+button.btn:active { background: #353b47; }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #08111c; font-weight: 600; }
+button.btn.primary:hover { background: #62a9e4; }
+button.btn.sm { padding: 4px 8px; font-size: 11px; }
+button.btn.seg.active { background: var(--accent); border-color: var(--accent); color: #08111c; }
+button.btn:disabled { opacity: .45; cursor: default; }
+
+select, input[type=number], input[type=text] {
+  background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 4px 6px; font-size: 12px; font-family: inherit;
+  min-width: 0;
+}
+input[type=number] { width: 78px; }
+input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+input[type=color] { width: 22px; height: 18px; padding: 0; border: 1px solid var(--line); background: none; }
+
+.panel-title {
+  color: var(--fg-dim); font-size: 11px; text-transform: none; letter-spacing: .04em;
+  margin: 12px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.panel-title:first-child { margin-top: 0; }
+.badge { background: var(--bg3); border-radius: 8px; padding: 0 7px; color: var(--fg); }
+.hint { color: var(--fg-dim); font-weight: 400; font-size: 11px; }
+
+.row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.row label { color: var(--fg-dim); font-size: 11px; }
+.checks { display: flex; flex-direction: column; gap: 5px; }
+.checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mono { font-family: var(--mono); }
+
+table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.kv td { padding: 2px 0; vertical-align: top; }
+table.kv td:first-child { color: var(--fg-dim); white-space: nowrap; padding-right: 8px; }
+table.kv td:last-child { text-align: right; font-family: var(--mono); }
+table.kv tr.warn td:last-child { color: var(--warn); }
+table.kv tr.ok td:last-child { color: var(--ok); }
+table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
+
+.tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
+.tab {
+  flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--fg-dim); padding: 6px 4px; cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+
+.part {
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 4px;
+  border: 1px solid transparent; cursor: pointer;
+}
+.part:hover { background: var(--bg3); }
+.part.selected { background: #26303c; border-color: var(--accent); }
+.part .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part .tri { color: var(--fg-dim); font-size: 10px; font-family: var(--mono); }
+.part .vis { background: none; border: none; color: var(--fg-dim); cursor: pointer; padding: 0 2px; font-size: 13px; }
+.part.hidden-part .nm { color: var(--fg-dim); text-decoration: line-through; }
+
+.drop-hint {
+  border: 1px dashed var(--line); border-radius: 6px; padding: 14px 10px;
+  text-align: center; color: var(--fg-dim); font-size: 12px; margin-top: 8px;
+}
+.drop-hint span { font-size: 11px; opacity: .8; }
+#viewport.dragover::after {
+  content: 'ドロップして読み込み'; position: absolute; inset: 12px;
+  border: 2px dashed var(--accent); border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; color: var(--accent);
+  background: rgba(79,157,224,.08); font-size: 15px;
+}
+
+.warnings { font-size: 11px; color: var(--fg-dim); line-height: 1.5; }
+.warnings .w { color: var(--warn); }
+.warnings .g { color: var(--ok); }
+
+.rot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 8px; }
+
+#slice-canvas {
+  width: 100%; height: auto; background: #101317; border: 1px solid var(--line);
+  border-radius: 4px; margin: 6px 0; display: block;
+}
+
+.orient-row { cursor: pointer; }
+.orient-row:hover td { background: var(--bg3); }
+
+@media (max-width: 900px) {
+  aside { width: 210px; }
+  #right { width: 240px; }
+  #topbar { gap: 8px; padding: 6px 8px; }
+  .brand .sub { display: none; }
+}
+@media (max-width: 680px) {
+  #status-right { display: none; }
+  main { flex-direction: column; }
+  aside { width: 100%; max-height: 34vh; border-right: none; border-top: 1px solid var(--line); }
+  #left { order: 3; }
+  #right { order: 2; width: 100%; border-left: none; }
+  #viewport { order: 1; min-height: 42vh; }
+}
+
+.print-preview { margin-top: 8px; }
+.preview-item { margin-bottom: 10px; }
+.preview-svg {
+  background: #fff; border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px; overflow: hidden;
+}
+.preview-svg svg { display: block; max-width: 100%; height: auto; }
+
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">STL Viewer<span class="sub">3D プリント前チェック</span></div>
+    <div class="tb-group">
+      <button id="btn-open" class="btn primary">STL を開く</button>
+      <input type="file" id="file-input" accept=".stl,model/stl" multiple hidden>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label">表示</label>
+      <button class="btn seg" id="btn-layout-single" data-layout="single">単画面</button>
+      <button class="btn seg" id="btn-layout-quad" data-layout="quad">3 面図</button>
+    </div>
+    <div class="tb-group" id="view-preset-group">
+      <label class="tb-label">視点</label>
+      <select id="sel-view">
+        <option value="iso">等角</option>
+        <option value="front">正面</option>
+        <option value="back">背面</option>
+        <option value="right">右側面</option>
+        <option value="left">左側面</option>
+        <option value="top">平面</option>
+        <option value="bottom">底面</option>
+      </select>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label">シェーディング</label>
+      <select id="sel-shade">
+        <option value="0">単色</option>
+        <option value="1">オーバーハング</option>
+        <option value="2">高さ</option>
+      </select>
+    </div>
+    <div class="tb-group right">
+      <button class="btn" id="btn-fit">全体表示</button>
+      <button class="btn" id="btn-png">PNG 保存</button>
+      <button class="btn" id="btn-export">STL 書き出し</button>
+      <button class="btn" id="btn-report">レポート</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="left">
+      <div class="panel-title">パーツ<span id="part-count" class="badge">0</span></div>
+      <div id="part-list"></div>
+      <div id="drop-hint" class="drop-hint">
+        STL ファイルをここにドロップ<br><span>複数ファイル可 / binary・ASCII 対応</span>
+      </div>
+      <div class="panel-title">警告</div>
+      <div id="warnings" class="warnings">-</div>
+    </aside>
+
+    <div id="viewport">
+      <canvas id="gl"></canvas>
+      <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="mode-hint" class="mode-hint" hidden></div>
+      <div id="busy" class="busy" hidden><span></span></div>
+    </div>
+
+    <aside id="right">
+      <nav class="tabs">
+        <button class="tab active" data-tab="measure">計測</button>
+        <button class="tab" data-tab="display">表示</button>
+        <button class="tab" data-tab="section">断面</button>
+        <button class="tab" data-tab="orient">向き</button>
+        <button class="tab" data-tab="place">配置</button>
+        <button class="tab" data-tab="print">図面</button>
+      </nav>
+
+      <section class="tabpanel" data-panel="measure">
+        <div class="panel-title">対象<span id="measure-target" class="hint">シーン全体</span></div>
+        <table class="kv" id="tbl-dims"></table>
+        <div class="panel-title">品質</div>
+        <table class="kv" id="tbl-quality"></table>
+        <div class="panel-title">材料</div>
+        <div class="row">
+          <select id="sel-material"></select>
+          <span id="mass-out" class="mono">-</span>
+        </div>
+        <div class="row">
+          <label>充填率 %</label>
+          <input type="number" id="in-infill" value="100" min="1" max="100" step="1">
+        </div>
+        <div class="panel-title">スケール</div>
+        <div class="row">
+          <label>倍率</label>
+          <input type="number" id="in-scale" value="100" min="0.1" step="1"> %
+          <button class="btn sm" id="btn-scale-apply">適用</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-inch">inch → mm (×25.4)</button>
+          <button class="btn sm" id="btn-scale-reset">等倍に戻す</button>
+        </div>
+        <div class="row">
+          <label>目標寸法</label>
+          <select id="sel-fit-axis"><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
+          <input type="number" id="in-fit-size" step="0.1" placeholder="mm">
+          <button class="btn sm" id="btn-fit-size">合わせる</button>
+        </div>
+        <div class="panel-title">2 点間計測</div>
+        <div class="row">
+          <button class="btn sm" id="btn-measure">計測を開始</button>
+          <button class="btn sm" id="btn-measure-clear">消去</button>
+        </div>
+        <table class="kv" id="tbl-measure"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="display" hidden>
+        <div class="panel-title">オーバーハング</div>
+        <div class="row">
+          <label>しきい値</label>
+          <input type="range" id="in-overhang" min="10" max="80" step="1" value="45">
+          <span id="overhang-val" class="mono">45°</span>
+        </div>
+        <table class="kv" id="tbl-overhang"></table>
+        <div class="row"><button class="btn sm" id="btn-overhang-calc">面積を集計</button></div>
+        <div class="panel-title">表示要素</div>
+        <div class="checks">
+          <label><input type="checkbox" id="chk-bed" checked> ビルドプレート</label>
+          <label><input type="checkbox" id="chk-dims" checked> 寸法</label>
+          <label><input type="checkbox" id="chk-bbox" checked> 外形ボックス</label>
+          <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
+          <label><input type="checkbox" id="chk-xray"> 透過表示</label>
+          <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
+        </div>
+      </section>
+
+      <section class="tabpanel" data-panel="section" hidden>
+        <div class="panel-title">クリップ平面</div>
+        <div id="clip-controls"></div>
+        <div class="row">
+          <label><input type="checkbox" id="chk-cap" checked> 切断面を塞ぐ</label>
+        </div>
+        <div class="panel-title">断面輪郭</div>
+        <div class="row">
+          <label>軸</label>
+          <select id="sel-slice-axis"><option value="2">Z</option><option value="0">X</option><option value="1">Y</option></select>
+          <label>位置</label>
+          <input type="number" id="in-slice-pos" step="0.5" value="1">
+          <button class="btn sm" id="btn-slice">計算</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-slice-prev">− 1 層</button>
+          <input type="number" id="in-slice-step" value="0.2" step="0.05" style="width:70px">
+          <button class="btn sm" id="btn-slice-next">+ 1 層</button>
+        </div>
+        <canvas id="slice-canvas" width="320" height="320"></canvas>
+        <table class="kv" id="tbl-slice"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="orient" hidden>
+        <div class="panel-title">回転</div>
+        <div class="rot-grid">
+          <button class="btn sm" data-rot="x,-90">X −90°</button>
+          <button class="btn sm" data-rot="x,90">X +90°</button>
+          <button class="btn sm" data-rot="y,-90">Y −90°</button>
+          <button class="btn sm" data-rot="y,90">Y +90°</button>
+          <button class="btn sm" data-rot="z,-90">Z −90°</button>
+          <button class="btn sm" data-rot="z,90">Z +90°</button>
+        </div>
+        <div class="row">
+          <select id="sel-rot-axis"><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
+          <input type="number" id="in-rot-angle" value="15" step="1"> °
+          <button class="btn sm" id="btn-rot-apply">回転</button>
+        </div>
+        <div class="row">
+          <label>姿勢 (XYZ°)</label>
+          <input type="number" id="in-eul-x" step="1" style="width:64px">
+          <input type="number" id="in-eul-y" step="1" style="width:64px">
+          <input type="number" id="in-eul-z" step="1" style="width:64px">
+          <button class="btn sm" id="btn-eul-apply">設定</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-lay">面をベッドに接地</button>
+          <button class="btn sm" id="btn-drop">ベッドに落とす</button>
+          <button class="btn sm" id="btn-rot-reset">回転をリセット</button>
+        </div>
+        <div class="panel-title">自動姿勢探索</div>
+        <div class="row">
+          <button class="btn sm" id="btn-auto-orient">候補を探索</button>
+          <span class="hint">要サポート面積と造形高さで評価</span>
+        </div>
+        <table class="kv" id="tbl-orient"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="place" hidden>
+        <div class="panel-title">ステージ (造形エリア)<span id="bed-summary" class="hint"></span></div>
+        <div class="row">
+          <label>形状</label>
+          <select id="sel-bed-shape">
+            <option value="rect">矩形</option>
+            <option value="circle">円形</option>
+          </select>
+          <select id="sel-printer"></select>
+        </div>
+        <div class="row" id="row-bed-rect">
+          <label>X</label><input type="number" id="in-bed-x" value="220" min="1" step="1">
+          <label>Y</label><input type="number" id="in-bed-y" value="220" min="1" step="1">
+        </div>
+        <div class="row" id="row-bed-circle" hidden>
+          <label>直径</label><input type="number" id="in-bed-d" value="220" min="1" step="1">
+        </div>
+        <div class="row">
+          <label>高さ Z</label><input type="number" id="in-bed-z" value="250" min="1" step="1">
+          <label>グリッド</label><input type="number" id="in-grid-step" value="10" min="0.5" step="1">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-bed-fit">モデルに合わせる</button>
+          <button class="btn sm" id="btn-bed-reset">既定に戻す</button>
+        </div>
+        <div class="panel-title">位置</div>
+        <div class="row">
+          <label>X</label><input type="number" id="in-pos-x" step="1">
+          <label>Y</label><input type="number" id="in-pos-y" step="1">
+          <button class="btn sm" id="btn-pos-apply">移動</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btn-center">ベッド中央へ</button>
+          <button class="btn sm" id="btn-arrange">自動整列</button>
+        </div>
+        <div class="row">
+          <label>間隔 mm</label><input type="number" id="in-margin" value="5" min="0" step="1">
+        </div>
+        <div class="panel-title">パーツ操作</div>
+        <div class="row">
+          <button class="btn sm" id="btn-duplicate">複製</button>
+          <button class="btn sm" id="btn-delete">削除</button>
+          <button class="btn sm" id="btn-clear">全消去</button>
+        </div>
+        <div class="panel-title">干渉・領域チェック</div>
+        <div class="row"><button class="btn sm" id="btn-collide">チェック実行</button></div>
+        <table class="kv" id="tbl-collide"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="print" hidden>
+        <div class="panel-title">実寸出力 (紙で寸法を確認する)</div>
+        <div class="row">
+          <label>対象</label>
+          <select id="sel-print-target">
+            <option value="selected">選択パーツ</option>
+            <option value="all">表示中のすべて</option>
+          </select>
+        </div>
+        <div class="checks" id="print-views">
+          <label><input type="checkbox" value="front" checked> 正面図 (X-Z)</label>
+          <label><input type="checkbox" value="top" checked> 平面図 (X-Y)</label>
+          <label><input type="checkbox" value="right"> 右側面図 (Y-Z)</label>
+          <label><input type="checkbox" value="bottom"> 底面図 (X-Y)</label>
+          <label><input type="checkbox" value="section"> 断面 (断面タブの軸・位置)</label>
+        </div>
+        <div class="panel-title">用紙</div>
+        <div class="row">
+          <select id="sel-paper"></select>
+          <select id="sel-paper-orient">
+            <option value="portrait">縦</option>
+            <option value="landscape">横</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>余白</label><input type="number" id="in-print-margin" value="10" min="0" step="1" style="width:64px">
+          <label>重ね代</label><input type="number" id="in-print-overlap" value="10" min="0" step="1" style="width:64px">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <label>倍率</label>
+          <select id="sel-print-scale">
+            <option value="1">1:1 (実寸)</option>
+            <option value="0.5">1:2 縮小</option>
+            <option value="0.25">1:4 縮小</option>
+            <option value="2">2:1 拡大</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="chk-print-dims" checked> 寸法線</label>
+          <label><input type="checkbox" id="chk-print-feature"> 稜線 (特徴エッジ) も描く</label>
+          <label><input type="checkbox" id="chk-print-grid"> グリッドを描く</label>
+        </div>
+        <div class="row">
+          <button class="btn primary sm" id="btn-print-pdf">PDF を書き出し</button>
+          <button class="btn sm" id="btn-print-svg">SVG を書き出し</button>
+          <button class="btn sm" id="btn-print-preview">プレビュー</button>
+        </div>
+        <table class="kv" id="tbl-print"></table>
+        <div id="print-preview" class="print-preview" hidden></div>
+        <p class="hint">
+          印刷時は「実際のサイズ / 100%」を選び、用紙に合わせる設定を切ること。
+          各ページ下部の 100 mm 基準線を定規で測れば倍率のずれを確認できる。
+          PDF 内の文字はフォント非埋め込みのため ASCII のみとなる。
+        </p>
+      </section>
+    </aside>
+  </main>
+
+  <footer id="status">
+    <span id="status-msg">STL ファイルを開いてください。</span>
+    <span id="status-right" class="mono"></span>
+  </footer>
+</div>
+<script>
+(function () {
+'use strict';
+// ===== 00_util.js =====
+// ---------------------------------------------------------------------------
+// 汎用ユーティリティ
+// ---------------------------------------------------------------------------
+
+function $(sel, root) { return (root || document).querySelector(sel); }
+function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+function el(tag, attrs, children) {
+  var e = document.createElement(tag);
+  if (attrs) {
+    for (var k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'html') e.innerHTML = attrs[k];
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+    }
+  }
+  if (children) {
+    for (var i = 0; i < children.length; i++) {
+      var c = children[i];
+      if (c === null || c === undefined) continue;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+  }
+  return e;
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+function fmt(n, digits) {
+  if (n === null || n === undefined || !isFinite(n)) return '-';
+  var d = digits === undefined ? 2 : digits;
+  return n.toFixed(d);
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+function fmtInt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+function saveBlob(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+}
+
+// 単純な色パレット (パーツ識別用)
+var PALETTE = [
+  [0.36, 0.62, 0.93], [0.95, 0.62, 0.29], [0.45, 0.80, 0.53],
+  [0.87, 0.45, 0.62], [0.62, 0.53, 0.90], [0.90, 0.82, 0.38],
+  [0.40, 0.80, 0.82], [0.85, 0.55, 0.42]
+];
+
+function rgbToCss(c) {
+  return 'rgb(' + Math.round(c[0] * 255) + ',' + Math.round(c[1] * 255) + ',' + Math.round(c[2] * 255) + ')';
+}
+
+function cssToRgb(s) {
+  var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s.trim());
+  if (m) return [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
+  return [0.5, 0.5, 0.5];
+}
+
+function rgbToHex(c) {
+  function h(x) { var v = Math.round(clamp(x, 0, 1) * 255).toString(16); return v.length < 2 ? '0' + v : v; }
+  return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+}
+
+// ===== 10_math.js =====
+// ---------------------------------------------------------------------------
+// 線形代数 (column-major 4x4 行列、クォータニオン、ベクトル)
+// WebGL と同じ column-major 配置: m[col*4 + row]
+// ---------------------------------------------------------------------------
+
+var M4 = {
+  create: function () {
+    return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  },
+  identity: function (o) {
+    o[0] = 1; o[1] = 0; o[2] = 0; o[3] = 0;
+    o[4] = 0; o[5] = 1; o[6] = 0; o[7] = 0;
+    o[8] = 0; o[9] = 0; o[10] = 1; o[11] = 0;
+    o[12] = 0; o[13] = 0; o[14] = 0; o[15] = 1;
+    return o;
+  },
+  copy: function (o, a) { for (var i = 0; i < 16; i++) o[i] = a[i]; return o; },
+  // o = a * b (列ベクトル規約: 点 p に対し a*(b*p))
+  mul: function (o, a, b) {
+    var a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    var a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    var a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    var a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+    for (var i = 0; i < 4; i++) {
+      var b0 = b[i * 4], b1 = b[i * 4 + 1], b2 = b[i * 4 + 2], b3 = b[i * 4 + 3];
+      o[i * 4] = a00 * b0 + a10 * b1 + a20 * b2 + a30 * b3;
+      o[i * 4 + 1] = a01 * b0 + a11 * b1 + a21 * b2 + a31 * b3;
+      o[i * 4 + 2] = a02 * b0 + a12 * b1 + a22 * b2 + a32 * b3;
+      o[i * 4 + 3] = a03 * b0 + a13 * b1 + a23 * b2 + a33 * b3;
+    }
+    return o;
+  },
+  perspective: function (o, fovy, aspect, near, far) {
+    var f = 1.0 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    M4.identity(o);
+    o[0] = f / aspect; o[5] = f; o[10] = (far + near) * nf; o[11] = -1;
+    o[14] = 2 * far * near * nf; o[15] = 0;
+    return o;
+  },
+  ortho: function (o, l, r, b, t, n, f) {
+    var lr = 1 / (l - r), bt = 1 / (b - t), nf = 1 / (n - f);
+    M4.identity(o);
+    o[0] = -2 * lr; o[5] = -2 * bt; o[10] = 2 * nf;
+    o[12] = (l + r) * lr; o[13] = (t + b) * bt; o[14] = (f + n) * nf;
+    return o;
+  },
+  lookAt: function (o, eye, center, up) {
+    var z = V3.norm(V3.sub([0, 0, 0], eye, center));
+    if (V3.len(z) < 1e-9) { z = [0, 0, 1]; }
+    var x = V3.cross([0, 0, 0], up, z);
+    if (V3.len(x) < 1e-9) {
+      // up と視線が平行な場合は別の up を使う
+      var alt = Math.abs(z[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1];
+      x = V3.cross([0, 0, 0], alt, z);
+    }
+    V3.norm(x);
+    var y = V3.norm(V3.cross([0, 0, 0], z, x));
+    o[0] = x[0]; o[1] = y[0]; o[2] = z[0]; o[3] = 0;
+    o[4] = x[1]; o[5] = y[1]; o[6] = z[1]; o[7] = 0;
+    o[8] = x[2]; o[9] = y[2]; o[10] = z[2]; o[11] = 0;
+    o[12] = -V3.dot(x, eye); o[13] = -V3.dot(y, eye); o[14] = -V3.dot(z, eye); o[15] = 1;
+    return o;
+  },
+  invert: function (o, m) {
+    var a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+    var a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+    var a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+    var a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+    var b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10;
+    var b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+    var b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+    var b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+    var b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31;
+    var b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+    var det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!det) return null;
+    det = 1.0 / det;
+    o[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+    o[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+    o[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+    o[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+    o[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+    o[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+    o[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+    o[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+    o[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+    o[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+    o[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+    o[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+    o[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+    o[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+    o[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+    o[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+    return o;
+  },
+  // 平行移動・回転(クォータニオン)・スケールから合成
+  compose: function (o, pos, q, scl) {
+    var x = q[0], y = q[1], z = q[2], w = q[3];
+    var x2 = x + x, y2 = y + y, z2 = z + z;
+    var xx = x * x2, xy = x * y2, xz = x * z2;
+    var yy = y * y2, yz = y * z2, zz = z * z2;
+    var wx = w * x2, wy = w * y2, wz = w * z2;
+    var sx = scl[0], sy = scl[1], sz = scl[2];
+    o[0] = (1 - (yy + zz)) * sx; o[1] = (xy + wz) * sx; o[2] = (xz - wy) * sx; o[3] = 0;
+    o[4] = (xy - wz) * sy; o[5] = (1 - (xx + zz)) * sy; o[6] = (yz + wx) * sy; o[7] = 0;
+    o[8] = (xz + wy) * sz; o[9] = (yz - wx) * sz; o[10] = (1 - (xx + yy)) * sz; o[11] = 0;
+    o[12] = pos[0]; o[13] = pos[1]; o[14] = pos[2]; o[15] = 1;
+    return o;
+  },
+  // 法線変換行列 (逆転置の 3x3) を 4x4 として返す
+  normalMatrix: function (o, m) {
+    var inv = M4.invert(M4.create(), m);
+    if (!inv) return M4.identity(o);
+    M4.identity(o);
+    o[0] = inv[0]; o[1] = inv[4]; o[2] = inv[8];
+    o[4] = inv[1]; o[5] = inv[5]; o[6] = inv[9];
+    o[8] = inv[2]; o[9] = inv[6]; o[10] = inv[10];
+    return o;
+  },
+  xformPoint: function (o, m, p) {
+    var x = p[0], y = p[1], z = p[2];
+    var w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    w = w || 1;
+    o[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+    o[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+    o[2] = (m[2] * x + m[6] * y + m[10] * z + m[14]) / w;
+    return o;
+  },
+  xformDir: function (o, m, p) {
+    var x = p[0], y = p[1], z = p[2];
+    o[0] = m[0] * x + m[4] * y + m[8] * z;
+    o[1] = m[1] * x + m[5] * y + m[9] * z;
+    o[2] = m[2] * x + m[6] * y + m[10] * z;
+    return o;
+  }
+};
+
+var V3 = {
+  add: function (o, a, b) { o[0] = a[0] + b[0]; o[1] = a[1] + b[1]; o[2] = a[2] + b[2]; return o; },
+  sub: function (o, a, b) { o[0] = a[0] - b[0]; o[1] = a[1] - b[1]; o[2] = a[2] - b[2]; return o; },
+  scale: function (o, a, s) { o[0] = a[0] * s; o[1] = a[1] * s; o[2] = a[2] * s; return o; },
+  dot: function (a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; },
+  cross: function (o, a, b) {
+    var x = a[1] * b[2] - a[2] * b[1];
+    var y = a[2] * b[0] - a[0] * b[2];
+    var z = a[0] * b[1] - a[1] * b[0];
+    o[0] = x; o[1] = y; o[2] = z; return o;
+  },
+  len: function (a) { return Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); },
+  dist: function (a, b) { var x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2]; return Math.sqrt(x * x + y * y + z * z); },
+  norm: function (o, a) {
+    if (a === undefined) a = o;
+    var l = V3.len(a);
+    if (l < 1e-12) { o[0] = 0; o[1] = 0; o[2] = 0; return o; }
+    o[0] = a[0] / l; o[1] = a[1] / l; o[2] = a[2] / l; return o;
+  },
+  clone: function (a) { return [a[0], a[1], a[2]]; }
+};
+
+var Quat = {
+  create: function () { return [0, 0, 0, 1]; },
+  fromAxisAngle: function (axis, rad) {
+    var a = V3.norm([0, 0, 0], axis), h = rad / 2, s = Math.sin(h);
+    return [a[0] * s, a[1] * s, a[2] * s, Math.cos(h)];
+  },
+  mul: function (a, b) {
+    var ax = a[0], ay = a[1], az = a[2], aw = a[3];
+    var bx = b[0], by = b[1], bz = b[2], bw = b[3];
+    return [
+      aw * bx + ax * bw + ay * bz - az * by,
+      aw * by - ax * bz + ay * bw + az * bx,
+      aw * bz + ax * by - ay * bx + az * bw,
+      aw * bw - ax * bx - ay * by - az * bz
+    ];
+  },
+  norm: function (q) {
+    var l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+    if (l < 1e-12) return [0, 0, 0, 1];
+    return [q[0] / l, q[1] / l, q[2] / l, q[3] / l];
+  },
+  // 単位ベクトル from を to へ向ける最小回転
+  fromUnitVectors: function (from, to) {
+    var f = V3.norm([0, 0, 0], from), t = V3.norm([0, 0, 0], to);
+    var d = V3.dot(f, t);
+    if (d > 1 - 1e-8) return [0, 0, 0, 1];
+    if (d < -1 + 1e-8) {
+      // 180 度回転: f に直交する任意軸
+      var axis = Math.abs(f[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+      axis = V3.norm([0, 0, 0], V3.cross([0, 0, 0], f, axis));
+      return [axis[0], axis[1], axis[2], 0];
+    }
+    var c = V3.cross([0, 0, 0], f, t);
+    return Quat.norm([c[0], c[1], c[2], 1 + d]);
+  },
+  rotate: function (q, v) {
+    var x = v[0], y = v[1], z = v[2];
+    var qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+    var ix = qw * x + qy * z - qz * y;
+    var iy = qw * y + qz * x - qx * z;
+    var iz = qw * z + qx * y - qy * x;
+    var iw = -qx * x - qy * y - qz * z;
+    return [
+      ix * qw + iw * -qx + iy * -qz - iz * -qy,
+      iy * qw + iw * -qy + iz * -qx - ix * -qz,
+      iz * qw + iw * -qz + ix * -qy - iy * -qx
+    ];
+  },
+  // XYZ 内因性オイラー角 (度) へ変換 (表示用)
+  toEulerDeg: function (q) {
+    var x = q[0], y = q[1], z = q[2], w = q[3];
+    var m11 = 1 - 2 * (y * y + z * z), m12 = 2 * (x * y - z * w), m13 = 2 * (x * z + y * w);
+    var m22 = 1 - 2 * (x * x + z * z), m23 = 2 * (y * z - x * w);
+    var m32 = 2 * (y * z + x * w), m33 = 1 - 2 * (x * x + y * y);
+    var ey = Math.asin(clamp(m13, -1, 1));
+    var ex, ez;
+    if (Math.abs(m13) < 0.9999999) {
+      ex = Math.atan2(-m23, m33);
+      ez = Math.atan2(-m12, m11);
+    } else {
+      ex = Math.atan2(m32, m22);
+      ez = 0;
+    }
+    var r = 180 / Math.PI;
+    return [ex * r, ey * r, ez * r];
+  },
+  fromEulerDeg: function (e) {
+    var r = Math.PI / 180;
+    var qx = Quat.fromAxisAngle([1, 0, 0], e[0] * r);
+    var qy = Quat.fromAxisAngle([0, 1, 0], e[1] * r);
+    var qz = Quat.fromAxisAngle([0, 0, 1], e[2] * r);
+    // R = Rx * Ry * Rz (toEulerDeg の抽出規約と一致させる)
+    return Quat.norm(Quat.mul(Quat.mul(qx, qy), qz));
+  }
+};
+
+// ===== 20_stl.js =====
+// ---------------------------------------------------------------------------
+// STL の読み込み / 書き出し
+// 返却する法線はファイル記載値ではなく頂点順序から再計算した幾何法線を用いる。
+// (STL の法線欄は不正確な出力が多いため)
+// ---------------------------------------------------------------------------
+
+function detectSTLFormat(buffer) {
+  if (buffer.byteLength < 15) return 'invalid';
+  if (buffer.byteLength >= 84) {
+    var dv = new DataView(buffer);
+    var n = dv.getUint32(80, true);
+    if (n > 0 && 84 + n * 50 === buffer.byteLength) return 'binary';
+  }
+  var head = new Uint8Array(buffer, 0, Math.min(1024, buffer.byteLength));
+  var s = '';
+  for (var i = 0; i < head.length; i++) s += String.fromCharCode(head[i]);
+  if (/^\s*solid/.test(s) && /facet|vertex/.test(s)) return 'ascii';
+  if (buffer.byteLength >= 84) return 'binary';
+  return 'invalid';
+}
+
+function parseSTLBinary(buffer) {
+  var dv = new DataView(buffer);
+  var tri = dv.getUint32(80, true);
+  var avail = Math.floor((buffer.byteLength - 84) / 50);
+  if (tri > avail) tri = avail;
+  var pos = new Float32Array(tri * 9);
+  var off = 84;
+  for (var i = 0; i < tri; i++) {
+    var p = i * 9;
+    off += 12; // ファイル記載法線は読み飛ばす
+    for (var v = 0; v < 9; v++) { pos[p + v] = dv.getFloat32(off, true); off += 4; }
+    off += 2; // attribute byte count
+  }
+  return { positions: pos, triangleCount: tri, format: 'binary' };
+}
+
+function parseSTLAscii(buffer) {
+  var text = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(buffer));
+  var re = /vertex\s+(-?[0-9eE+.\-]+)\s+(-?[0-9eE+.\-]+)\s+(-?[0-9eE+.\-]+)/g;
+  var vals = [];
+  var m;
+  while ((m = re.exec(text)) !== null) {
+    vals.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+  }
+  var tri = Math.floor(vals.length / 9);
+  var pos = new Float32Array(tri * 9);
+  for (var i = 0; i < tri * 9; i++) pos[i] = vals[i];
+  return { positions: pos, triangleCount: tri, format: 'ascii' };
+}
+
+function parseSTL(buffer) {
+  var f = detectSTLFormat(buffer);
+  if (f === 'binary') return parseSTLBinary(buffer);
+  if (f === 'ascii') {
+    var r = parseSTLAscii(buffer);
+    if (r.triangleCount === 0 && buffer.byteLength >= 84) return parseSTLBinary(buffer);
+    return r;
+  }
+  throw new Error('STL として解釈できません');
+}
+
+// 三角形ごとの幾何法線を頂点展開して返す (フラットシェーディング用)
+function buildFlatNormals(positions) {
+  var tri = positions.length / 9;
+  var out = new Float32Array(positions.length);
+  for (var i = 0; i < tri; i++) {
+    var p = i * 9;
+    var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
+    var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
+    var cx = positions[p + 6], cy = positions[p + 7], cz = positions[p + 8];
+    var e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    var e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+    var nx = e1y * e2z - e1z * e2y;
+    var ny = e1z * e2x - e1x * e2z;
+    var nz = e1x * e2y - e1y * e2x;
+    var l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (l > 1e-20) { nx /= l; ny /= l; nz /= l; } else { nx = 0; ny = 0; nz = 1; }
+    for (var v = 0; v < 3; v++) {
+      out[p + v * 3] = nx; out[p + v * 3 + 1] = ny; out[p + v * 3 + 2] = nz;
+    }
+  }
+  return out;
+}
+
+// 三角形の向きを一括反転 (法線が内向きだった場合の是正)
+function flipWinding(positions) {
+  var tri = positions.length / 9;
+  for (var i = 0; i < tri; i++) {
+    var p = i * 9;
+    for (var k = 0; k < 3; k++) {
+      var t = positions[p + 3 + k];
+      positions[p + 3 + k] = positions[p + 6 + k];
+      positions[p + 6 + k] = t;
+    }
+  }
+  return positions;
+}
+
+// ワールド変換を適用した binary STL を生成する
+// parts: [{positions: Float32Array, matrix: Float32Array}]
+function buildBinarySTL(parts, header) {
+  var total = 0, i, j;
+  for (i = 0; i < parts.length; i++) total += parts[i].positions.length / 9;
+  var buf = new ArrayBuffer(84 + total * 50);
+  var dv = new DataView(buf);
+  var head = (header || 'stl-viewer export') + '';
+  for (i = 0; i < 80; i++) dv.setUint8(i, i < head.length ? (head.charCodeAt(i) & 0x7f) : 0x20);
+  dv.setUint32(80, total, true);
+  var off = 84;
+  var a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0];
+  for (i = 0; i < parts.length; i++) {
+    var pos = parts[i].positions, m = parts[i].matrix;
+    // 鏡映変換 (行列式が負) では頂点順序を入れ替えて表裏を保つ
+    var det = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]);
+    var mirrored = det < 0;
+    var tri = pos.length / 9;
+    for (j = 0; j < tri; j++) {
+      var p = j * 9;
+      M4.xformPoint(a, m, [pos[p], pos[p + 1], pos[p + 2]]);
+      M4.xformPoint(b, m, [pos[p + 3], pos[p + 4], pos[p + 5]]);
+      M4.xformPoint(c, m, [pos[p + 6], pos[p + 7], pos[p + 8]]);
+      if (mirrored) { var tmp = b; b = c; c = tmp; }
+      var e1 = V3.sub([0, 0, 0], b, a), e2 = V3.sub([0, 0, 0], c, a);
+      var n = V3.norm(V3.cross([0, 0, 0], e1, e2));
+      dv.setFloat32(off, n[0], true); dv.setFloat32(off + 4, n[1], true); dv.setFloat32(off + 8, n[2], true);
+      off += 12;
+      var vs = [a, b, c];
+      for (var k = 0; k < 3; k++) {
+        dv.setFloat32(off, vs[k][0], true);
+        dv.setFloat32(off + 4, vs[k][1], true);
+        dv.setFloat32(off + 8, vs[k][2], true);
+        off += 12;
+      }
+      dv.setUint16(off, 0, true); off += 2;
+    }
+  }
+  return buf;
+}
+
+// ===== 30_geom.js =====
+// ---------------------------------------------------------------------------
+// メッシュ解析: 寸法・体積・表面積・トポロジ・BVH・断面・オーバーハング
+// 座標系: X 右 / Y 奥 / Z 上、単位 mm、Z=0 がビルドプレート面
+// ---------------------------------------------------------------------------
+
+function computeBounds(positions) {
+  var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (var i = 0; i < positions.length; i += 3) {
+    for (var k = 0; k < 3; k++) {
+      var v = positions[i + k];
+      if (v < min[k]) min[k] = v;
+      if (v > max[k]) max[k] = v;
+    }
+  }
+  if (!isFinite(min[0])) { min = [0, 0, 0]; max = [0, 0, 0]; }
+  return { min: min, max: max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+}
+
+// 変換行列適用後のバウンディングボックス (8 頂点を変換)
+function transformedBounds(localBounds, m) {
+  var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  var p = [0, 0, 0];
+  for (var i = 0; i < 8; i++) {
+    var c = [
+      (i & 1) ? localBounds.max[0] : localBounds.min[0],
+      (i & 2) ? localBounds.max[1] : localBounds.min[1],
+      (i & 4) ? localBounds.max[2] : localBounds.min[2]
+    ];
+    M4.xformPoint(p, m, c);
+    for (var k = 0; k < 3; k++) {
+      if (p[k] < min[k]) min[k] = p[k];
+      if (p[k] > max[k]) max[k] = p[k];
+    }
+  }
+  return { min: min, max: max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+}
+
+// 符号付き体積 (mm^3)、表面積 (mm^2)、体積重心
+function computeMassProperties(positions) {
+  var vol = 0, area = 0;
+  var cx = 0, cy = 0, cz = 0;
+  var tri = positions.length / 9;
+  for (var i = 0; i < tri; i++) {
+    var p = i * 9;
+    var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
+    var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
+    var ccx = positions[p + 6], ccy = positions[p + 7], ccz = positions[p + 8];
+    // 原点を頂点とする四面体の符号付き体積
+    var v = (ax * (by * ccz - bz * ccy) + ay * (bz * ccx - bx * ccz) + az * (bx * ccy - by * ccx)) / 6;
+    vol += v;
+    cx += v * (ax + bx + ccx) / 4;
+    cy += v * (ay + by + ccy) / 4;
+    cz += v * (az + bz + ccz) / 4;
+    var e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    var e2x = ccx - ax, e2y = ccy - ay, e2z = ccz - az;
+    var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    area += 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz);
+  }
+  var c = Math.abs(vol) > 1e-12 ? [cx / vol, cy / vol, cz / vol] : [0, 0, 0];
+  return { volume: vol, area: area, centroid: c, triangleCount: tri };
+}
+
+// 頂点マージ。返り値の index は positions の三角形順に対応する頂点番号
+function weldVertices(positions, eps) {
+  var n = positions.length / 3;
+  var index = new Uint32Array(n);
+  var map = new Map();
+  var inv = 1 / eps;
+  var verts = [];
+  for (var i = 0; i < n; i++) {
+    var x = Math.round(positions[i * 3] * inv);
+    var y = Math.round(positions[i * 3 + 1] * inv);
+    var z = Math.round(positions[i * 3 + 2] * inv);
+    var key = x + '/' + y + '/' + z;
+    var id = map.get(key);
+    if (id === undefined) {
+      id = verts.length / 3;
+      map.set(key, id);
+      verts.push(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+    }
+    index[i] = id;
+  }
+  return { index: index, vertexCount: verts.length / 3, vertices: new Float32Array(verts) };
+}
+
+// エッジ接続からメッシュ健全性を判定
+function analyzeTopology(index, vertexCount) {
+  var triCount = index.length / 3;
+  var edgeMap = new Map();
+  var i, a, b, key, rec;
+  var degenerate = 0;
+  for (i = 0; i < triCount; i++) {
+    var v0 = index[i * 3], v1 = index[i * 3 + 1], v2 = index[i * 3 + 2];
+    if (v0 === v1 || v1 === v2 || v0 === v2) { degenerate++; continue; }
+    var pairs = [[v0, v1], [v1, v2], [v2, v0]];
+    for (var e = 0; e < 3; e++) {
+      a = pairs[e][0]; b = pairs[e][1];
+      var dir = a < b ? 1 : -1;
+      var lo = dir > 0 ? a : b, hi = dir > 0 ? b : a;
+      key = lo * 67108864 + hi; // 頂点数 6.7e7 まで一意
+      rec = edgeMap.get(key);
+      if (rec === undefined) { rec = [0, 0]; edgeMap.set(key, rec); }
+      if (dir > 0) rec[0]++; else rec[1]++;
+    }
+  }
+  var boundary = 0, nonManifold = 0, inconsistent = 0;
+  edgeMap.forEach(function (r) {
+    var total = r[0] + r[1];
+    if (total === 1) boundary++;
+    else if (total > 2) nonManifold++;
+    else if (total === 2 && (r[0] === 2 || r[1] === 2)) inconsistent++;
+  });
+  // 連結成分数 (シェル数) : union-find
+  var parent = new Int32Array(vertexCount);
+  for (i = 0; i < vertexCount; i++) parent[i] = i;
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(x, y) { var rx = find(x), ry = find(y); if (rx !== ry) parent[rx] = ry; }
+  for (i = 0; i < triCount; i++) {
+    union(index[i * 3], index[i * 3 + 1]);
+    union(index[i * 3 + 1], index[i * 3 + 2]);
+  }
+  var roots = new Set();
+  var used = new Uint8Array(vertexCount);
+  for (i = 0; i < index.length; i++) used[index[i]] = 1;
+  for (i = 0; i < vertexCount; i++) if (used[i]) roots.add(find(i));
+  return {
+    edgeCount: edgeMap.size,
+    boundaryEdges: boundary,
+    nonManifoldEdges: nonManifold,
+    inconsistentEdges: inconsistent,
+    degenerateTriangles: degenerate,
+    shells: roots.size,
+    watertight: boundary === 0 && nonManifold === 0 && inconsistent === 0
+  };
+}
+
+// ---------------------------------------------------------------------------
+// BVH (中央値分割)
+// ---------------------------------------------------------------------------
+
+function buildBVH(positions, leafSize) {
+  var triCount = positions.length / 9;
+  var maxLeaf = leafSize || 8;
+  var triIndex = new Uint32Array(triCount);
+  var cent = new Float32Array(triCount * 3);
+  var triMin = new Float32Array(triCount * 3);
+  var triMax = new Float32Array(triCount * 3);
+  var i, k;
+  for (i = 0; i < triCount; i++) {
+    triIndex[i] = i;
+    var p = i * 9;
+    for (k = 0; k < 3; k++) {
+      var v0 = positions[p + k], v1 = positions[p + 3 + k], v2 = positions[p + 6 + k];
+      cent[i * 3 + k] = (v0 + v1 + v2) / 3;
+      triMin[i * 3 + k] = Math.min(v0, v1, v2);
+      triMax[i * 3 + k] = Math.max(v0, v1, v2);
+    }
+  }
+  var maxNodes = Math.max(1, triCount * 2);
+  var nodeMin = new Float32Array(maxNodes * 3);
+  var nodeMax = new Float32Array(maxNodes * 3);
+  var nodeData = new Int32Array(maxNodes * 3); // [leftChild, start, count] count>0 なら葉
+  var nodeCount = 0;
+  var scratch = new Uint32Array(triCount);
+
+  function buildNode(start, count) {
+    var self = nodeCount++;
+    var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    var i2, k2;
+    for (i2 = start; i2 < start + count; i2++) {
+      var t = triIndex[i2];
+      for (k2 = 0; k2 < 3; k2++) {
+        if (triMin[t * 3 + k2] < mn[k2]) mn[k2] = triMin[t * 3 + k2];
+        if (triMax[t * 3 + k2] > mx[k2]) mx[k2] = triMax[t * 3 + k2];
+      }
+    }
+    for (k2 = 0; k2 < 3; k2++) { nodeMin[self * 3 + k2] = mn[k2]; nodeMax[self * 3 + k2] = mx[k2]; }
+    if (count <= maxLeaf) {
+      nodeData[self * 3] = -1; nodeData[self * 3 + 1] = start; nodeData[self * 3 + 2] = count;
+      return self;
+    }
+    var axis = 0, ext = mx[0] - mn[0];
+    if (mx[1] - mn[1] > ext) { axis = 1; ext = mx[1] - mn[1]; }
+    if (mx[2] - mn[2] > ext) { axis = 2; ext = mx[2] - mn[2]; }
+    var mid = (mn[axis] + mx[axis]) / 2;
+    // 空間中央での分割
+    var wl = 0;
+    for (i2 = start; i2 < start + count; i2++) {
+      var t2 = triIndex[i2];
+      if (cent[t2 * 3 + axis] < mid) { scratch[start + wl] = t2; wl++; }
+    }
+    var wr = 0;
+    for (i2 = start; i2 < start + count; i2++) {
+      var t3 = triIndex[i2];
+      if (cent[t3 * 3 + axis] >= mid) { scratch[start + wl + wr] = t3; wr++; }
+    }
+    var minSide = count >> 4;
+    if (wl <= minSide || wr <= minSide) {
+      // 偏りが大きい場合は重心座標でソートして個数二分 (深さを O(log n) に保つ)
+      var slice = Array.prototype.slice.call(triIndex.subarray(start, start + count));
+      slice.sort(function (x, y) { return cent[x * 3 + axis] - cent[y * 3 + axis]; });
+      for (i2 = 0; i2 < count; i2++) scratch[start + i2] = slice[i2];
+      wl = count >> 1; wr = count - wl;
+    }
+    for (i2 = start; i2 < start + count; i2++) triIndex[i2] = scratch[i2];
+    nodeData[self * 3 + 2] = 0;
+    var left = buildNode(start, wl);
+    var right = buildNode(start + wl, wr);
+    nodeData[self * 3] = left;
+    nodeData[self * 3 + 1] = right;
+    return self;
+  }
+  if (triCount > 0) buildNode(0, triCount);
+  return { nodeMin: nodeMin, nodeMax: nodeMax, nodeData: nodeData, triIndex: triIndex, nodeCount: nodeCount, triCount: triCount };
+}
+
+function rayAABB(origin, invDir, mn, mx, base) {
+  var tmin = -Infinity, tmax = Infinity;
+  for (var k = 0; k < 3; k++) {
+    var t1 = (mn[base + k] - origin[k]) * invDir[k];
+    var t2 = (mx[base + k] - origin[k]) * invDir[k];
+    if (t1 > t2) { var t = t1; t1 = t2; t2 = t; }
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmax < tmin) return Infinity;
+  }
+  return tmax < 0 ? Infinity : (tmin > 0 ? tmin : 0);
+}
+
+// ローカル空間でのレイ交差。最近傍の三角形を返す
+function raycastBVH(bvh, positions, origin, dir) {
+  if (!bvh || bvh.triCount === 0) return null;
+  var invDir = [1 / (dir[0] || 1e-20), 1 / (dir[1] || 1e-20), 1 / (dir[2] || 1e-20)];
+  var stack = [0];
+  var best = null, bestT = Infinity;
+  while (stack.length) {
+    var node = stack.pop();
+    if (rayAABB(origin, invDir, bvh.nodeMin, bvh.nodeMax, node * 3) >= bestT) continue;
+    var count = bvh.nodeData[node * 3 + 2];
+    if (count > 0) {
+      var start = bvh.nodeData[node * 3 + 1];
+      for (var i = 0; i < count; i++) {
+        var t = bvh.triIndex[start + i];
+        var hit = rayTriangle(origin, dir, positions, t * 9);
+        if (hit !== null && hit < bestT && hit > 1e-6) { bestT = hit; best = t; }
+      }
+    } else {
+      stack.push(bvh.nodeData[node * 3]);
+      stack.push(bvh.nodeData[node * 3 + 1]);
+    }
+  }
+  if (best === null) return null;
+  var p = best * 9;
+  var e1 = [positions[p + 3] - positions[p], positions[p + 4] - positions[p + 1], positions[p + 5] - positions[p + 2]];
+  var e2 = [positions[p + 6] - positions[p], positions[p + 7] - positions[p + 1], positions[p + 8] - positions[p + 2]];
+  var n = V3.norm(V3.cross([0, 0, 0], e1, e2));
+  return {
+    t: bestT,
+    triangle: best,
+    point: [origin[0] + dir[0] * bestT, origin[1] + dir[1] * bestT, origin[2] + dir[2] * bestT],
+    normal: n
+  };
+}
+
+function rayTriangle(o, d, pos, p) {
+  var e1x = pos[p + 3] - pos[p], e1y = pos[p + 4] - pos[p + 1], e1z = pos[p + 5] - pos[p + 2];
+  var e2x = pos[p + 6] - pos[p], e2y = pos[p + 7] - pos[p + 1], e2z = pos[p + 8] - pos[p + 2];
+  var hx = d[1] * e2z - d[2] * e2y, hy = d[2] * e2x - d[0] * e2z, hz = d[0] * e2y - d[1] * e2x;
+  var a = e1x * hx + e1y * hy + e1z * hz;
+  if (a > -1e-12 && a < 1e-12) return null;
+  var f = 1 / a;
+  var sx = o[0] - pos[p], sy = o[1] - pos[p + 1], sz = o[2] - pos[p + 2];
+  var u = f * (sx * hx + sy * hy + sz * hz);
+  if (u < -1e-7 || u > 1 + 1e-7) return null;
+  var qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+  var v = f * (d[0] * qx + d[1] * qy + d[2] * qz);
+  if (v < -1e-7 || u + v > 1 + 1e-7) return null;
+  var t = f * (e2x * qx + e2y * qy + e2z * qz);
+  return t > 1e-9 ? t : null;
+}
+
+// ---------------------------------------------------------------------------
+// 断面 (Z 一定平面) の輪郭抽出
+// ---------------------------------------------------------------------------
+
+function sliceAtZ(positions, matrix, z) {
+  var segs = [];
+  var tri = positions.length / 9;
+  var a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0];
+  var v = [a, b, c];
+  var d = [0, 0, 0];
+  // 平面上に乗る頂点 (d = 0) は上側として分類する。
+  // 面が切断面と同一平面の場合はすべて上側となり除外されるため、
+  // メッシュの頂点列が切断面に一致しても輪郭が二重化しない。
+  for (var i = 0; i < tri; i++) {
+    var p = i * 9;
+    M4.xformPoint(a, matrix, [positions[p], positions[p + 1], positions[p + 2]]);
+    M4.xformPoint(b, matrix, [positions[p + 3], positions[p + 4], positions[p + 5]]);
+    M4.xformPoint(c, matrix, [positions[p + 6], positions[p + 7], positions[p + 8]]);
+    var below = 0, above = 0;
+    for (var k = 0; k < 3; k++) {
+      var dk = v[k][2] - z;
+      d[k] = dk;
+      if (dk < 0) below++; else above++;
+    }
+    if (below === 0 || above === 0) continue;
+    var pts = [];
+    for (var e = 0; e < 3; e++) {
+      var i0 = e, i1 = (e + 1) % 3;
+      if ((d[i0] < 0) === (d[i1] < 0)) continue;
+      var t = d[i0] / (d[i0] - d[i1]);
+      pts.push([
+        v[i0][0] + (v[i1][0] - v[i0][0]) * t,
+        v[i0][1] + (v[i1][1] - v[i0][1]) * t
+      ]);
+    }
+    if (pts.length >= 2) {
+      var sx = pts[0][0] - pts[1][0], sy = pts[0][1] - pts[1][1];
+      // 頂点上で交差した場合に生じる長さ 0 の線分は捨てる
+      if (sx * sx + sy * sy > 1e-20) segs.push([pts[0], pts[1]]);
+    }
+  }
+  return chainSegments(segs);
+}
+
+// 線分群を連結して輪郭 (ポリライン) にまとめる
+function chainSegments(segs, tol) {
+  var eps = tol || 1e-4;
+  var map = new Map();
+  function key(p) { return Math.round(p[0] / eps) + '_' + Math.round(p[1] / eps); }
+  var i;
+  for (i = 0; i < segs.length; i++) {
+    var k0 = key(segs[i][0]), k1 = key(segs[i][1]);
+    if (k0 === k1) continue;
+    if (!map.has(k0)) map.set(k0, []);
+    if (!map.has(k1)) map.set(k1, []);
+    map.get(k0).push(i);
+    map.get(k1).push(i);
+  }
+  var used = new Uint8Array(segs.length);
+  var loops = [];
+  for (i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    var poly = [segs[i][0], segs[i][1]];
+    var closed = false;
+    for (var dir = 0; dir < 2; dir++) {
+      for (;;) {
+        var endPt = dir === 0 ? poly[poly.length - 1] : poly[0];
+        var cand = map.get(key(endPt));
+        var next = -1;
+        if (cand) {
+          for (var j = 0; j < cand.length; j++) {
+            if (!used[cand[j]]) { next = cand[j]; break; }
+          }
+        }
+        if (next < 0) break;
+        used[next] = 1;
+        var s = segs[next];
+        var other = (key(s[0]) === key(endPt)) ? s[1] : s[0];
+        if (dir === 0) poly.push(other); else poly.unshift(other);
+        if (key(other) === key(poly[dir === 0 ? 0 : poly.length - 1])) { closed = true; break; }
+      }
+      if (closed) break;
+    }
+    loops.push({ points: poly, closed: closed });
+  }
+  return loops;
+}
+
+// 指定軸を Z に一致させる回転行列。任意軸の断面を sliceAtZ で扱うために用いる
+function sliceRotation(axis) {
+  var v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axis];
+  var q = Quat.fromUnitVectors(v, [0, 0, 1]);
+  return M4.compose(M4.create(), [0, 0, 0], q, [1, 1, 1]);
+}
+
+function polygonArea(points) {
+  var a = 0;
+  for (var i = 0, n = points.length; i < n; i++) {
+    var p = points[i], q = points[(i + 1) % n];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return a / 2;
+}
+
+function polylineLength(points, closed) {
+  var l = 0;
+  for (var i = 0; i < points.length - 1; i++) {
+    l += Math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1]);
+  }
+  if (closed && points.length > 2) {
+    l += Math.hypot(points[0][0] - points[points.length - 1][0], points[0][1] - points[points.length - 1][1]);
+  }
+  return l;
+}
+
+// ---------------------------------------------------------------------------
+// オーバーハング / 接地面の集計
+// 定義: 下向き面の法線 n に対し beta = asin(-n.z)。beta > threshold で要サポート。
+// 垂直壁 beta=0、水平下面 beta=90。
+// ---------------------------------------------------------------------------
+
+function overhangStats(positions, matrix, thresholdDeg, bedZ, bedTol, step) {
+  var sinT = Math.sin(thresholdDeg * Math.PI / 180);
+  var tol = bedTol === undefined ? 0.05 : bedTol;
+  var tri = positions.length / 9;
+  var st = Math.max(1, step | 0);
+  var total = 0, over = 0, contact = 0, downTotal = 0;
+  var a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0];
+  for (var i = 0; i < tri; i += st) {
+    var p = i * 9;
+    M4.xformPoint(a, matrix, [positions[p], positions[p + 1], positions[p + 2]]);
+    M4.xformPoint(b, matrix, [positions[p + 3], positions[p + 4], positions[p + 5]]);
+    M4.xformPoint(c, matrix, [positions[p + 6], positions[p + 7], positions[p + 8]]);
+    var e1 = V3.sub([0, 0, 0], b, a), e2 = V3.sub([0, 0, 0], c, a);
+    var n = V3.cross([0, 0, 0], e1, e2);
+    var area2 = V3.len(n);
+    if (area2 < 1e-20) continue;
+    var area = area2 / 2;
+    total += area;
+    var nz = n[2] / area2;
+    var d = -nz;
+    if (d <= 0) continue;
+    downTotal += area;
+    var maxZ = Math.max(a[2], b[2], c[2]);
+    var onBed = (maxZ <= bedZ + tol) && d > 0.999;
+    if (onBed) { contact += area; continue; }
+    if (d > sinT) over += area;
+  }
+  if (st > 1) { total *= st; over *= st; downTotal *= st; contact *= st; }
+  return { totalArea: total, overhangArea: over, downwardArea: downTotal, contactArea: contact, sampled: st > 1 };
+}
+
+// 面積上位の代表法線 (自動姿勢探索の候補)
+function candidateNormals(positions, maxCount) {
+  var tri = positions.length / 9;
+  var map = new Map();
+  var step = 1;
+  if (tri > 200000) step = Math.ceil(tri / 200000);
+  for (var i = 0; i < tri; i += step) {
+    var p = i * 9;
+    var e1x = positions[p + 3] - positions[p], e1y = positions[p + 4] - positions[p + 1], e1z = positions[p + 5] - positions[p + 2];
+    var e2x = positions[p + 6] - positions[p], e2y = positions[p + 7] - positions[p + 1], e2z = positions[p + 8] - positions[p + 2];
+    var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    var l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (l < 1e-20) continue;
+    nx /= l; ny /= l; nz /= l;
+    var q = Math.round(nx * 24) + '_' + Math.round(ny * 24) + '_' + Math.round(nz * 24);
+    var rec = map.get(q);
+    if (rec) { rec.area += l / 2; }
+    else map.set(q, { n: [nx, ny, nz], area: l / 2 });
+  }
+  var arr = [];
+  map.forEach(function (r) { arr.push(r); });
+  arr.sort(function (x, y) { return y.area - x.area; });
+  return arr.slice(0, maxCount || 24);
+}
+
+// ---------------------------------------------------------------------------
+// 三角形同士の交差 (パーツ干渉検出)
+// ---------------------------------------------------------------------------
+
+function triTriIntersect(a0, a1, a2, b0, b1, b2) {
+  // 分離軸判定 (エッジ外積 9 軸 + 2 面法線)
+  var axes = [];
+  var ae = [V3.sub([0, 0, 0], a1, a0), V3.sub([0, 0, 0], a2, a1), V3.sub([0, 0, 0], a0, a2)];
+  var be = [V3.sub([0, 0, 0], b1, b0), V3.sub([0, 0, 0], b2, b1), V3.sub([0, 0, 0], b0, b2)];
+  axes.push(V3.cross([0, 0, 0], ae[0], ae[1]));
+  axes.push(V3.cross([0, 0, 0], be[0], be[1]));
+  for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) axes.push(V3.cross([0, 0, 0], ae[i], be[j]));
+  var A = [a0, a1, a2], B = [b0, b1, b2];
+  for (var k = 0; k < axes.length; k++) {
+    var ax = axes[k];
+    if (V3.len(ax) < 1e-12) continue;
+    var amin = Infinity, amax = -Infinity, bmin = Infinity, bmax = -Infinity;
+    for (var m = 0; m < 3; m++) {
+      var da = V3.dot(ax, A[m]); if (da < amin) amin = da; if (da > amax) amax = da;
+      var db = V3.dot(ax, B[m]); if (db < bmin) bmin = db; if (db > bmax) bmax = db;
+    }
+    if (amax < bmin - 1e-9 || bmax < amin - 1e-9) return false;
+  }
+  return true;
+}
+
+function aabbOverlap(a, b, margin) {
+  var m = margin || 0;
+  for (var k = 0; k < 3; k++) {
+    if (a.max[k] < b.min[k] + m || b.max[k] < a.min[k] + m) return false;
+  }
+  return true;
+}
+
+// ===== 40_pdf.js =====
+// ---------------------------------------------------------------------------
+// 最小構成の PDF ライタ (外部ライブラリ非依存)
+// - 座標は mm 指定、内部で pt (1/72 inch) へ変換する
+// - 原点はページ左下、Y 上向き (PDF の既定と同じ)
+// - フォントは標準 14 フォントの Helvetica のみ。埋め込みを行わないため
+//   文字列は ASCII に限定し、非 ASCII は '?' に置換する
+// ---------------------------------------------------------------------------
+
+var MM_TO_PT = 72 / 25.4;
+
+function pdfNum(v) {
+  // PDF の実数表記。指数表記は許されないため固定小数で出力する
+  var s = (Math.round(v * 1000) / 1000).toFixed(3);
+  return s.replace(/\.?0+$/, '') || '0';
+}
+
+function pdfEscapeText(s) {
+  var out = '';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    var ch = (c >= 32 && c <= 126) ? s[i] : '?';
+    if (ch === '(' || ch === ')' || ch === '\\') out += '\\';
+    out += ch;
+  }
+  return out;
+}
+
+function createPDF(pageWidthMm, pageHeightMm) {
+  return {
+    width: pageWidthMm,
+    height: pageHeightMm,
+    pages: [],
+    addPage: function () {
+      var ops = [];
+      var page = {
+        ops: ops,
+        _stroke: null,
+        _fill: null,
+        _width: null,
+        setStroke: function (r, g, b) {
+          var key = r + ',' + g + ',' + b;
+          if (this._stroke !== key) { ops.push(pdfNum(r) + ' ' + pdfNum(g) + ' ' + pdfNum(b) + ' RG'); this._stroke = key; }
+          return this;
+        },
+        setFill: function (r, g, b) {
+          var key = r + ',' + g + ',' + b;
+          if (this._fill !== key) { ops.push(pdfNum(r) + ' ' + pdfNum(g) + ' ' + pdfNum(b) + ' rg'); this._fill = key; }
+          return this;
+        },
+        setLineWidth: function (pt) {
+          if (this._width !== pt) { ops.push(pdfNum(pt) + ' w'); this._width = pt; }
+          return this;
+        },
+        setDash: function (arrPt, phase) {
+          if (!arrPt || !arrPt.length) ops.push('[] 0 d');
+          else ops.push('[' + arrPt.map(pdfNum).join(' ') + '] ' + pdfNum(phase || 0) + ' d');
+          return this;
+        },
+        line: function (x1, y1, x2, y2) {
+          ops.push(pdfNum(x1 * MM_TO_PT) + ' ' + pdfNum(y1 * MM_TO_PT) + ' m ' +
+            pdfNum(x2 * MM_TO_PT) + ' ' + pdfNum(y2 * MM_TO_PT) + ' l S');
+          return this;
+        },
+        // points: [[x,y], ...] (mm)
+        polyline: function (points, close, fill) {
+          if (!points.length) return this;
+          var s = pdfNum(points[0][0] * MM_TO_PT) + ' ' + pdfNum(points[0][1] * MM_TO_PT) + ' m';
+          for (var i = 1; i < points.length; i++) {
+            s += ' ' + pdfNum(points[i][0] * MM_TO_PT) + ' ' + pdfNum(points[i][1] * MM_TO_PT) + ' l';
+          }
+          if (close) s += ' h';
+          s += fill ? ' f' : ' S';
+          ops.push(s);
+          return this;
+        },
+        rect: function (x, y, w, h, fill) {
+          ops.push(pdfNum(x * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT) + ' ' +
+            pdfNum(w * MM_TO_PT) + ' ' + pdfNum(h * MM_TO_PT) + ' re ' + (fill ? 'f' : 'S'));
+          return this;
+        },
+        circle: function (cx, cy, r, fill) {
+          // 4 本の 3 次ベジエで円を近似する
+          var k = 0.5522847498 * r;
+          var p = function (x, y) { return pdfNum(x * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT); };
+          ops.push(
+            p(cx + r, cy) + ' m ' +
+            p(cx + r, cy + k) + ' ' + p(cx + k, cy + r) + ' ' + p(cx, cy + r) + ' c ' +
+            p(cx - k, cy + r) + ' ' + p(cx - r, cy + k) + ' ' + p(cx - r, cy) + ' c ' +
+            p(cx - r, cy - k) + ' ' + p(cx - k, cy - r) + ' ' + p(cx, cy - r) + ' c ' +
+            p(cx + k, cy - r) + ' ' + p(cx + r, cy - k) + ' ' + p(cx + r, cy) + ' c ' +
+            (fill ? 'f' : 'S'));
+          return this;
+        },
+        // align: 'left' | 'center' | 'right'
+        text: function (x, y, str, sizePt, align, bold) {
+          var t = pdfEscapeText(String(str));
+          var size = sizePt || 8;
+          var w = pdfTextWidthMm(t, size);
+          var tx = x;
+          if (align === 'center') tx = x - w / 2;
+          else if (align === 'right') tx = x - w;
+          ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + pdfNum(size) + ' Tf ' +
+            pdfNum(tx * MM_TO_PT) + ' ' + pdfNum(y * MM_TO_PT) + ' Td (' + t + ') Tj ET');
+          return this;
+        }
+      };
+      this.pages.push(page);
+      return page;
+    },
+    toBytes: function () {
+      return serializePDF(this);
+    }
+  };
+}
+
+// Helvetica の概算文字幅 (mm)。寸法テキストの中央寄せに用いる
+function pdfTextWidthMm(str, sizePt) {
+  var w = 0;
+  for (var i = 0; i < str.length; i++) {
+    var c = str[i];
+    if (/[ilj.,:;'|!\[\]]/.test(c)) w += 0.30;
+    else if (/[A-Z@%]/.test(c)) w += 0.68;
+    else if (/[mwMW]/.test(c)) w += 0.85;
+    else w += 0.53;
+  }
+  return w * sizePt / MM_TO_PT;
+}
+
+function serializePDF(doc) {
+  var objects = [];   // 1-indexed で扱うため 0 番はダミー
+  objects.push(null);
+  function addObject(body) { objects.push(body); return objects.length - 1; }
+
+  var catalogId = addObject(null);   // 1
+  var pagesId = addObject(null);     // 2
+  var fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  var fontBoldId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+
+  var kids = [];
+  for (var i = 0; i < doc.pages.length; i++) {
+    var content = doc.pages[i].ops.join('\n') + '\n';
+    var contentId = addObject('<< /Length ' + content.length + ' >>\nstream\n' + content + 'endstream');
+    var pageId = addObject(
+      '<< /Type /Page /Parent ' + pagesId + ' 0 R' +
+      ' /MediaBox [0 0 ' + pdfNum(doc.width * MM_TO_PT) + ' ' + pdfNum(doc.height * MM_TO_PT) + ']' +
+      ' /Resources << /Font << /F1 ' + fontId + ' 0 R /F2 ' + fontBoldId + ' 0 R >> >>' +
+      ' /Contents ' + contentId + ' 0 R >>');
+    kids.push(pageId + ' 0 R');
+  }
+  objects[catalogId] = '<< /Type /Catalog /Pages ' + pagesId + ' 0 R >>';
+  objects[pagesId] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + doc.pages.length + ' >>';
+
+  var out = '%PDF-1.4\n';
+  var offsets = [0];
+  for (i = 1; i < objects.length; i++) {
+    offsets[i] = out.length;
+    out += i + ' 0 obj\n' + objects[i] + '\nendobj\n';
+  }
+  var xrefPos = out.length;
+  out += 'xref\n0 ' + objects.length + '\n';
+  out += '0000000000 65535 f \n';
+  for (i = 1; i < objects.length; i++) {
+    out += ('0000000000' + offsets[i]).slice(-10) + ' 00000 n \n';
+  }
+  out += 'trailer\n<< /Size ' + objects.length + ' /Root ' + catalogId + ' 0 R >>\n';
+  out += 'startxref\n' + xrefPos + '\n%%EOF\n';
+
+  // 内容は ASCII に限定しているため 1 文字 = 1 バイトで対応する
+  var bytes = new Uint8Array(out.length);
+  for (i = 0; i < out.length; i++) {
+    var c = out.charCodeAt(i);
+    bytes[i] = c > 255 ? 63 : c;
+  }
+  return bytes;
+}
+
+var PAPER_SIZES = [
+  { name: 'A4', w: 210, h: 297 },
+  { name: 'A3', w: 297, h: 420 },
+  { name: 'A5', w: 148, h: 210 },
+  { name: 'Letter', w: 215.9, h: 279.4 },
+  { name: 'Legal', w: 215.9, h: 355.6 }
+];
+
+// ===== 42_drawing.js =====
+// ---------------------------------------------------------------------------
+// 印刷用の実寸図面 (正投影の輪郭線・断面輪郭) の生成
+// 正投影のシルエットは、隣接 2 面の表裏が入れ替わるエッジ (輪郭線) を
+// 厳密に抽出して得る。ラスタ化を行わないため、出力はベクタかつ寸法誤差なし。
+// ---------------------------------------------------------------------------
+
+var DRAW_VIEWS = {
+  front: { name: 'FRONT (XZ)', jp: '正面図', into: [0, 1, 0], uAxis: 0, uSign: 1, vAxis: 2, vSign: 1, uLabel: 'X', vLabel: 'Z' },
+  back: { name: 'BACK (XZ)', jp: '背面図', into: [0, -1, 0], uAxis: 0, uSign: -1, vAxis: 2, vSign: 1, uLabel: 'X', vLabel: 'Z' },
+  right: { name: 'RIGHT (YZ)', jp: '右側面図', into: [-1, 0, 0], uAxis: 1, uSign: 1, vAxis: 2, vSign: 1, uLabel: 'Y', vLabel: 'Z' },
+  left: { name: 'LEFT (YZ)', jp: '左側面図', into: [1, 0, 0], uAxis: 1, uSign: -1, vAxis: 2, vSign: 1, uLabel: 'Y', vLabel: 'Z' },
+  top: { name: 'TOP (XY)', jp: '平面図', into: [0, 0, -1], uAxis: 0, uSign: 1, vAxis: 1, vSign: 1, uLabel: 'X', vLabel: 'Y' },
+  bottom: { name: 'BOTTOM (XY)', jp: '底面図', into: [0, 0, 1], uAxis: 0, uSign: 1, vAxis: 1, vSign: -1, uLabel: 'X', vLabel: 'Y' }
+};
+
+// 頂点統合結果のキャッシュ (図面生成時のみ必要)
+function ensureWelded(part) {
+  if (part.welded) return part.welded;
+  var diag = V3.len(part.localBounds.size) || 1;
+  part.welded = weldVertices(part.positions, Math.max(diag * 1e-6, 1e-5));
+  return part.welded;
+}
+
+// パーツのワールド座標頂点 (統合済み)
+function weldedWorldVertices(part) {
+  var w = ensureWelded(part);
+  var m = part.matrix;
+  var out = new Float64Array(w.vertices.length);
+  for (var i = 0; i < w.vertices.length; i += 3) {
+    var x = w.vertices[i], y = w.vertices[i + 1], z = w.vertices[i + 2];
+    out[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+    out[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+    out[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+  }
+  return out;
+}
+
+// 指定視線方向における輪郭線と特徴エッジを 2D (u, v) へ投影して返す
+function projectedEdges(part, view, opts) {
+  var o = opts || {};
+  var featureDeg = o.featureAngle === undefined ? 25 : o.featureAngle;
+  var wantFeature = !!o.feature;
+  var w = ensureWelded(part);
+  var verts = weldedWorldVertices(part);
+  var index = w.index;
+  var faceCount = index.length / 3;
+  var into = view.into;
+
+  // 面法線と表裏
+  var nx = new Float64Array(faceCount), ny = new Float64Array(faceCount), nz = new Float64Array(faceCount);
+  var front = new Uint8Array(faceCount);
+  var i, f;
+  for (f = 0; f < faceCount; f++) {
+    var a = index[f * 3] * 3, b = index[f * 3 + 1] * 3, c = index[f * 3 + 2] * 3;
+    var e1x = verts[b] - verts[a], e1y = verts[b + 1] - verts[a + 1], e1z = verts[b + 2] - verts[a + 2];
+    var e2x = verts[c] - verts[a], e2y = verts[c + 1] - verts[a + 1], e2z = verts[c + 2] - verts[a + 2];
+    var px = e1y * e2z - e1z * e2y, py = e1z * e2x - e1x * e2z, pz = e1x * e2y - e1y * e2x;
+    var l = Math.sqrt(px * px + py * py + pz * pz);
+    if (l < 1e-20) { nx[f] = 0; ny[f] = 0; nz[f] = 0; front[f] = 0; continue; }
+    nx[f] = px / l; ny[f] = py / l; nz[f] = pz / l;
+    front[f] = (nx[f] * into[0] + ny[f] * into[1] + nz[f] * into[2]) < 0 ? 1 : 0;
+  }
+
+  // エッジ -> 隣接面
+  var edgeMap = new Map();
+  for (f = 0; f < faceCount; f++) {
+    var v0 = index[f * 3], v1 = index[f * 3 + 1], v2 = index[f * 3 + 2];
+    if (v0 === v1 || v1 === v2 || v0 === v2) continue;
+    var pairs = [[v0, v1], [v1, v2], [v2, v0]];
+    for (var e = 0; e < 3; e++) {
+      var lo = Math.min(pairs[e][0], pairs[e][1]), hi = Math.max(pairs[e][0], pairs[e][1]);
+      var key = lo * 67108864 + hi;
+      var rec = edgeMap.get(key);
+      if (rec === undefined) edgeMap.set(key, { a: lo, b: hi, f0: f, f1: -1, n: 1 });
+      else { rec.n++; if (rec.f1 < 0) rec.f1 = f; }
+    }
+  }
+
+  var uA = view.uAxis, vA = view.vAxis, uS = view.uSign, vS = view.vSign;
+  var sil = [], feat = [];
+  var cosFeature = Math.cos(featureDeg * Math.PI / 180);
+  edgeMap.forEach(function (rec) {
+    var p0 = rec.a * 3, p1 = rec.b * 3;
+    var seg = [
+      verts[p0 + uA] * uS, verts[p0 + vA] * vS,
+      verts[p1 + uA] * uS, verts[p1 + vA] * vS
+    ];
+    if (rec.n === 1) { sil.push(seg); return; }          // 境界エッジ (穴の縁)
+    if (rec.n > 2) { sil.push(seg); return; }            // 非多様体は輪郭として扱う
+    if (front[rec.f0] !== front[rec.f1]) { sil.push(seg); return; }
+    if (!wantFeature) return;
+    if (!front[rec.f0]) return;                          // 裏側の稜線は描かない
+    var d = nx[rec.f0] * nx[rec.f1] + ny[rec.f0] * ny[rec.f1] + nz[rec.f0] * nz[rec.f1];
+    if (d < cosFeature) feat.push(seg);
+  });
+  return { silhouette: sil, feature: feat };
+}
+
+function segmentsBounds(lists) {
+  var minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (var k = 0; k < lists.length; k++) {
+    var segs = lists[k];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (s[0] < minU) minU = s[0]; if (s[0] > maxU) maxU = s[0];
+      if (s[2] < minU) minU = s[2]; if (s[2] > maxU) maxU = s[2];
+      if (s[1] < minV) minV = s[1]; if (s[1] > maxV) maxV = s[1];
+      if (s[3] < minV) minV = s[3]; if (s[3] > maxV) maxV = s[3];
+    }
+  }
+  if (!isFinite(minU)) return null;
+  return { minU: minU, maxU: maxU, minV: minV, maxV: maxV, width: maxU - minU, height: maxV - minV };
+}
+
+// 正投影図を組み立てる。parts はワールド変換済みのパーツ配列
+function buildViewDrawing(parts, viewKey, opts) {
+  var view = DRAW_VIEWS[viewKey];
+  var o = opts || {};
+  var sil = [], feat = [];
+  for (var i = 0; i < parts.length; i++) {
+    var r = projectedEdges(parts[i], view, o);
+    sil = sil.concat(r.silhouette);
+    feat = feat.concat(r.feature);
+  }
+  var b = segmentsBounds([sil, feat]);
+  if (!b) return null;
+  return {
+    kind: 'view',
+    key: viewKey,
+    title: view.name,
+    titleJp: view.jp,
+    uLabel: view.uLabel,
+    vLabel: view.vLabel,
+    silhouette: sil,
+    feature: feat,
+    bounds: b
+  };
+}
+
+// 断面図 (指定軸・位置) を組み立てる
+function buildSectionDrawing(parts, axis, value) {
+  var Rm = sliceRotation(axis);
+  var segs = [];
+  for (var i = 0; i < parts.length; i++) {
+    var m = M4.mul(M4.create(), Rm, parts[i].matrix);
+    var loops = sliceAtZ(parts[i].positions, m, value);
+    for (var l = 0; l < loops.length; l++) {
+      var pts = loops[l].points;
+      for (var k = 0; k + 1 < pts.length; k++) {
+        segs.push([pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]]);
+      }
+      if (loops[l].closed && pts.length > 2) {
+        segs.push([pts[pts.length - 1][0], pts[pts.length - 1][1], pts[0][0], pts[0][1]]);
+      }
+    }
+  }
+  var b = segmentsBounds([segs]);
+  if (!b) return null;
+  var labels = [['Y', 'Z'], ['X', 'Z'], ['X', 'Y']][axis];
+  return {
+    kind: 'section',
+    key: 'section',
+    title: 'SECTION ' + ['X', 'Y', 'Z'][axis] + ' = ' + value.toFixed(2) + ' mm',
+    titleJp: '断面 ' + ['X', 'Y', 'Z'][axis] + ' = ' + value.toFixed(2) + ' mm',
+    uLabel: labels[0],
+    vLabel: labels[1],
+    silhouette: segs,
+    feature: [],
+    bounds: b
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 用紙への割り付け
+// ---------------------------------------------------------------------------
+
+var PAGE_HEADER_MM = 9;   // 上部の表題領域
+var PAGE_FOOTER_MM = 16;  // 下部の校正スケール領域
+
+function paginateDrawing(drawing, opts) {
+  var paperW = opts.landscape ? opts.paper.h : opts.paper.w;
+  var paperH = opts.landscape ? opts.paper.w : opts.paper.h;
+  var margin = opts.margin === undefined ? 10 : opts.margin;
+  var overlap = opts.overlap === undefined ? 10 : opts.overlap;
+  var scale = opts.scale || 1;
+  var dimPad = opts.dimensions === false ? 3 : 24; // 寸法線と寸法値を描く余地
+
+  var contentW = paperW - margin * 2;
+  var contentH = paperH - margin * 2 - PAGE_HEADER_MM - PAGE_FOOTER_MM;
+  if (contentW <= 20 || contentH <= 20) throw new Error('用紙に対して余白が大きすぎます');
+
+  // 図面座標 (mm) での描画範囲。寸法線のぶん左下に余地を確保する
+  var minU = drawing.bounds.minU - dimPad;
+  var minV = drawing.bounds.minV - dimPad;
+  var maxU = drawing.bounds.maxU + 2;
+  var maxV = drawing.bounds.maxV + 2;
+  var totalW = (maxU - minU) * scale;
+  var totalH = (maxV - minV) * scale;
+
+  var stepW = contentW - overlap;
+  var stepH = contentH - overlap;
+  var cols = totalW <= contentW ? 1 : Math.ceil((totalW - overlap) / stepW);
+  var rows = totalH <= contentH ? 1 : Math.ceil((totalH - overlap) / stepH);
+
+  // 1 ページに収まる方向は用紙内で中央に寄せる (複数ページ時は継ぎ目を合わせるため寄せない)
+  var centerU = cols === 1 ? (contentW - totalW) / 2 / scale : 0;
+  var centerV = rows === 1 ? (contentH - totalH) / 2 / scale : 0;
+  var pages = [];
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      pages.push({
+        col: c + 1, row: r + 1, cols: cols, rows: rows,
+        // このページの左下に対応する図面座標 (mm)
+        originU: minU - centerU + (cols === 1 ? 0 : (c * stepW) / scale),
+        originV: minV - centerV + (rows === 1 ? 0 : ((rows - 1 - r) * stepH) / scale)
+      });
+    }
+  }
+  return {
+    pages: pages, cols: cols, rows: rows,
+    paperW: paperW, paperH: paperH, margin: margin, overlap: overlap, scale: scale,
+    contentW: contentW, contentH: contentH,
+    totalW: totalW, totalH: totalH
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PDF 出力
+// ---------------------------------------------------------------------------
+
+function renderDrawingsToPDF(drawings, opts) {
+  var o = opts || {};
+  var paper = o.paper || PAPER_SIZES[0];
+  var layoutOpts = {
+    paper: paper, landscape: !!o.landscape, margin: o.margin, overlap: o.overlap,
+    scale: o.scale || 1, dimensions: o.dimensions !== false
+  };
+  var first = paginateDrawing(drawings[0], layoutOpts);
+  var pdf = createPDF(first.paperW, first.paperH);
+  var totalPages = 0;
+  var layouts = [];
+  for (var i = 0; i < drawings.length; i++) {
+    var lay = paginateDrawing(drawings[i], layoutOpts);
+    layouts.push(lay);
+    totalPages += lay.pages.length;
+  }
+  var pageNo = 0;
+  for (i = 0; i < drawings.length; i++) {
+    var d = drawings[i], l = layouts[i];
+    for (var p = 0; p < l.pages.length; p++) {
+      pageNo++;
+      drawPDFPage(pdf.addPage(), d, l, l.pages[p], o, pageNo, totalPages);
+    }
+  }
+  return pdf.toBytes();
+}
+
+function drawPDFPage(page, drawing, layout, tile, o, pageNo, totalPages) {
+  var margin = layout.margin;
+  var scale = layout.scale;
+  var x0 = margin, y0 = margin + PAGE_FOOTER_MM;
+  var cw = layout.contentW, ch = layout.contentH;
+
+  function toPageX(u) { return x0 + (u - tile.originU) * scale; }
+  function toPageY(v) { return y0 + (v - tile.originV) * scale; }
+
+  // --- 表題 ---
+  var title = (o.title ? o.title + '  |  ' : '') + drawing.title;
+  page.setFill(0, 0, 0);
+  page.text(x0, layout.paperH - margin - 4, title, 10, 'left', true);
+  var sub = 'scale ' + (scale === 1 ? '1:1 (actual size)' : scale.toFixed(3) + ' x') +
+    '   unit: mm' +
+    (layout.pages.length > 1 ? '   tile R' + tile.row + 'C' + tile.col + ' of R' + layout.rows + 'C' + layout.cols : '') +
+    '   page ' + pageNo + '/' + totalPages;
+  page.setFill(0.35, 0.35, 0.35);
+  page.text(x0, layout.paperH - margin - 8.4, sub, 7.5, 'left');
+  if (o.note) page.text(layout.paperW - margin, layout.paperH - margin - 8.4, o.note, 7.5, 'right');
+
+  // --- 作図領域の枠 ---
+  page.setStroke(0.75, 0.75, 0.75).setLineWidth(0.3).setDash(null);
+  page.rect(x0, y0, cw, ch, false);
+
+  page.ops.push('q');
+  page.ops.push(pdfNum(x0 * MM_TO_PT) + ' ' + pdfNum(y0 * MM_TO_PT) + ' ' +
+    pdfNum(cw * MM_TO_PT) + ' ' + pdfNum(ch * MM_TO_PT) + ' re W n');
+  page._stroke = page._fill = page._width = null;
+
+  // --- グリッド ---
+  if (o.grid) {
+    var step = o.gridStep || 10;
+    page.setStroke(0.86, 0.86, 0.86).setLineWidth(0.2);
+    var uStart = Math.ceil(tile.originU / step) * step;
+    for (var u = uStart; toPageX(u) <= x0 + cw; u += step) {
+      page.line(toPageX(u), y0, toPageX(u), y0 + ch);
+    }
+    var vStart = Math.ceil(tile.originV / step) * step;
+    for (var v = vStart; toPageY(v) <= y0 + ch; v += step) {
+      page.line(x0, toPageY(v), x0 + cw, toPageY(v));
+    }
+  }
+
+  // --- 特徴エッジ (細線) ---
+  var i, s;
+  if (drawing.feature.length) {
+    page.setStroke(0.45, 0.45, 0.45).setLineWidth(0.25).setDash(null);
+    for (i = 0; i < drawing.feature.length; i++) {
+      s = drawing.feature[i];
+      page.line(toPageX(s[0]), toPageY(s[1]), toPageX(s[2]), toPageY(s[3]));
+    }
+  }
+  // --- 輪郭線 (太線) ---
+  page.setStroke(0, 0, 0).setLineWidth(o.lineWidth || 0.7);
+  for (i = 0; i < drawing.silhouette.length; i++) {
+    s = drawing.silhouette[i];
+    page.line(toPageX(s[0]), toPageY(s[1]), toPageX(s[2]), toPageY(s[3]));
+  }
+
+  // --- 寸法線 ---
+  if (o.dimensions !== false) drawPDFDimensions(page, drawing, toPageX, toPageY);
+
+  page.ops.push('Q');
+  page._stroke = page._fill = page._width = null;
+
+  // --- タイル継ぎ目の目印 ---
+  if (layout.pages.length > 1) {
+    page.setStroke(0.55, 0.55, 0.55).setLineWidth(0.3).setDash([2, 2]);
+    page.rect(x0, y0, cw, ch, false);
+    page.setDash(null);
+    // 位置合わせ用の十字
+    var marks = [[x0, y0], [x0 + cw, y0], [x0, y0 + ch], [x0 + cw, y0 + ch]];
+    page.setStroke(0.2, 0.2, 0.2).setLineWidth(0.3);
+    for (i = 0; i < marks.length; i++) {
+      page.line(marks[i][0] - 3, marks[i][1], marks[i][0] + 3, marks[i][1]);
+      page.line(marks[i][0], marks[i][1] - 3, marks[i][0], marks[i][1] + 3);
+    }
+    page.setFill(0.3, 0.3, 0.3);
+    page.text(x0 + cw / 2, y0 - 4.5, 'overlap ' + layout.overlap + ' mm - align crosses with the adjacent sheet', 7, 'center');
+  }
+
+  // --- 校正スケール (印刷倍率の確認用) ---
+  drawCalibrationRuler(page, x0, margin + 4, Math.min(100, cw));
+}
+
+function drawPDFDimensions(page, drawing, toPageX, toPageY) {
+  var b = drawing.bounds;
+  var off = 7;
+  page.setStroke(0.1, 0.35, 0.65).setLineWidth(0.3).setDash(null);
+  page.setFill(0.1, 0.35, 0.65);
+  // 水平 (下側)
+  var yl = toPageY(b.minV) - off;
+  page.line(toPageX(b.minU), yl, toPageX(b.maxU), yl);
+  page.line(toPageX(b.minU), yl - 2, toPageX(b.minU), toPageY(b.minV) + 1);
+  page.line(toPageX(b.maxU), yl - 2, toPageX(b.maxU), toPageY(b.minV) + 1);
+  page.text((toPageX(b.minU) + toPageX(b.maxU)) / 2, yl + 1.5,
+    drawing.uLabel + ' ' + b.width.toFixed(2), 8, 'center');
+  // 垂直 (左側)
+  var xl = toPageX(b.minU) - off;
+  page.line(xl, toPageY(b.minV), xl, toPageY(b.maxV));
+  page.line(xl - 2, toPageY(b.minV), toPageX(b.minU) + 1, toPageY(b.minV));
+  page.line(xl - 2, toPageY(b.maxV), toPageX(b.minU) + 1, toPageY(b.maxV));
+  page.text(xl - 1.5, (toPageY(b.minV) + toPageY(b.maxV)) / 2,
+    drawing.vLabel + ' ' + b.height.toFixed(2), 8, 'right');
+}
+
+// 100 mm の基準スケール。印刷時の倍率ずれを利用者が検出できるようにする
+function drawCalibrationRuler(page, x, y, lengthMm) {
+  var len = Math.max(20, Math.min(100, lengthMm));
+  page.setStroke(0, 0, 0).setLineWidth(0.4).setDash(null);
+  page.line(x, y, x + len, y);
+  for (var i = 0; i <= len; i += 10) {
+    var h = (i % 50 === 0) ? 3 : 1.8;
+    page.line(x + i, y, x + i, y + h);
+  }
+  page.setFill(0, 0, 0);
+  page.text(x, y - 3.4, '0', 7, 'left');
+  page.text(x + len, y - 3.4, len + ' mm', 7, 'center');
+  page.setFill(0.35, 0.35, 0.35);
+  page.text(x + len + 6, y - 0.5,
+    'Print at 100% (no page scaling). Measure this bar: it must be exactly ' + len + ' mm.', 7, 'left');
+}
+
+// ---------------------------------------------------------------------------
+// SVG 出力 (1 図面 = 1 ファイル、mm 指定なので実寸で印刷できる)
+// ---------------------------------------------------------------------------
+
+function renderDrawingToSVG(drawing, opts) {
+  var o = opts || {};
+  var pad = 16;
+  var b = drawing.bounds;
+  var w = b.width + pad * 2, h = b.height + pad * 2 + 12;
+  function X(u) { return (u - b.minU + pad).toFixed(3); }
+  function Y(v) { return (b.maxV - v + pad).toFixed(3); }
+  var out = [];
+  out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + w.toFixed(3) + 'mm" height="' + h.toFixed(3) +
+    'mm" viewBox="0 0 ' + w.toFixed(3) + ' ' + h.toFixed(3) + '">');
+  out.push('<title>' + escapeXml((o.title ? o.title + ' - ' : '') + drawing.titleJp) + ' (1:1)</title>');
+  out.push('<rect width="100%" height="100%" fill="#ffffff"/>');
+  if (o.grid) {
+    var step = o.gridStep || 10;
+    out.push('<g stroke="#dddddd" stroke-width="0.15">');
+    for (var u = Math.ceil(b.minU / step) * step; u <= b.maxU; u += step) {
+      out.push('<line x1="' + X(u) + '" y1="' + Y(b.maxV) + '" x2="' + X(u) + '" y2="' + Y(b.minV) + '"/>');
+    }
+    for (var v = Math.ceil(b.minV / step) * step; v <= b.maxV; v += step) {
+      out.push('<line x1="' + X(b.minU) + '" y1="' + Y(v) + '" x2="' + X(b.maxU) + '" y2="' + Y(v) + '"/>');
+    }
+    out.push('</g>');
+  }
+  var i, s;
+  if (drawing.feature.length) {
+    out.push('<g stroke="#888888" stroke-width="0.2" fill="none">');
+    for (i = 0; i < drawing.feature.length; i++) {
+      s = drawing.feature[i];
+      out.push('<line x1="' + X(s[0]) + '" y1="' + Y(s[1]) + '" x2="' + X(s[2]) + '" y2="' + Y(s[3]) + '"/>');
+    }
+    out.push('</g>');
+  }
+  out.push('<g stroke="#000000" stroke-width="' + (o.lineWidth || 0.35) + '" fill="none" stroke-linecap="round">');
+  for (i = 0; i < drawing.silhouette.length; i++) {
+    s = drawing.silhouette[i];
+    out.push('<line x1="' + X(s[0]) + '" y1="' + Y(s[1]) + '" x2="' + X(s[2]) + '" y2="' + Y(s[3]) + '"/>');
+  }
+  out.push('</g>');
+  // 表題と校正スケール
+  out.push('<g font-family="sans-serif" font-size="3.5" fill="#000000">');
+  out.push('<text x="' + pad.toFixed(2) + '" y="' + (pad - 6).toFixed(2) + '">' +
+    escapeXml(drawing.titleJp + '  1:1  ' + drawing.uLabel + ' ' + b.width.toFixed(2) +
+      ' x ' + drawing.vLabel + ' ' + b.height.toFixed(2) + ' mm') + '</text>');
+  var ry = h - 6;
+  out.push('<line x1="' + pad + '" y1="' + ry + '" x2="' + (pad + 100) + '" y2="' + ry +
+    '" stroke="#000" stroke-width="0.3"/>');
+  for (i = 0; i <= 100; i += 10) {
+    out.push('<line x1="' + (pad + i) + '" y1="' + ry + '" x2="' + (pad + i) + '" y2="' +
+      (ry - (i % 50 === 0 ? 3 : 1.8)) + '" stroke="#000" stroke-width="0.3"/>');
+  }
+  out.push('<text x="' + (pad + 106) + '" y="' + (ry + 1) + '" font-size="3">100 mm reference - print at 100%</text>');
+  out.push('</g>');
+  out.push('</svg>');
+  return out.join('\n');
+}
+
+function escapeXml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c];
+  });
+}
+
+// ===== 50_gl.js =====
+// ---------------------------------------------------------------------------
+// WebGL2 の薄いラッパとシェーダ定義
+// ---------------------------------------------------------------------------
+
+var MESH_VS = [
+  '#version 300 es',
+  'layout(location=0) in vec3 aPos;',
+  'layout(location=1) in vec3 aNormal;',
+  'uniform mat4 uMVP;',
+  'uniform mat4 uModel;',
+  'uniform mat4 uNormalMat;',
+  'out vec3 vWorld;',
+  'out vec3 vNormal;',
+  'void main(){',
+  '  vec4 w = uModel * vec4(aPos, 1.0);',
+  '  vWorld = w.xyz;',
+  '  vNormal = mat3(uNormalMat) * aNormal;',
+  '  gl_Position = uMVP * vec4(aPos, 1.0);',
+  '}'
+].join('\n');
+
+var MESH_FS = [
+  '#version 300 es',
+  'precision highp float;',
+  'in vec3 vWorld;',
+  'in vec3 vNormal;',
+  'uniform vec4 uClip[6];',
+  'uniform int uClipCount;',
+  'uniform vec3 uColor;',
+  'uniform float uOpacity;',
+  'uniform int uShadeMode;',   // 0: 単色, 1: オーバーハング, 2: 高さ
+  'uniform float uOverhangSin;',
+  'uniform float uBedZ;',
+  'uniform float uHeightMax;',
+  'uniform float uSelected;',
+  'out vec4 fragColor;',
+  'vec3 heatmap(float t){',
+  '  t = clamp(t, 0.0, 1.0);',
+  '  return clamp(vec3(1.5 - abs(4.0*t - 3.0), 1.5 - abs(4.0*t - 2.0), 1.5 - abs(4.0*t - 1.0)), 0.0, 1.0);',
+  '}',
+  'void main(){',
+  '  for(int i=0;i<6;i++){',
+  '    if(i >= uClipCount) break;',
+  '    if(dot(vec4(vWorld,1.0), uClip[i]) > 0.0) discard;',
+  '  }',
+  '  vec3 n = normalize(vNormal);',
+  '  bool front = gl_FrontFacing;',
+  '  if(!front) n = -n;',
+  '  vec3 base = uColor;',
+  '  if(uShadeMode == 1){',
+  '    float d = -n.z;',
+  '    bool onBed = (vWorld.z <= uBedZ + 0.2) && d > 0.9;',
+  '    if(onBed){ base = vec3(0.20, 0.72, 0.45); }',
+  '    else if(d > uOverhangSin){',
+  '      float f = clamp((d - uOverhangSin) / max(1e-3, 1.0 - uOverhangSin), 0.0, 1.0);',
+  '      base = mix(vec3(0.98, 0.78, 0.20), vec3(0.95, 0.20, 0.18), f);',
+  '    } else { base = vec3(0.58, 0.60, 0.64); }',
+  '  } else if(uShadeMode == 2){',
+  '    base = heatmap((vWorld.z - uBedZ) / max(1e-3, uHeightMax));',
+  '  }',
+  '  if(!front) base *= 0.45;',
+  '  vec3 lightA = normalize(vec3(0.45, -0.75, 0.75));',
+  '  vec3 lightB = normalize(vec3(-0.6, 0.4, 0.35));',
+  '  float dA = max(dot(n, lightA), 0.0);',
+  '  float dB = max(dot(n, lightB), 0.0) * 0.35;',
+  '  float amb = 0.34 + 0.16 * (n.z * 0.5 + 0.5);',
+  '  vec3 col = base * (amb + dA * 0.62 + dB);',
+  '  col = mix(col, vec3(1.0), uSelected * 0.12);',
+  '  col = pow(col, vec3(0.4545));',
+  '  fragColor = vec4(col, uOpacity);',
+  '}'
+].join('\n');
+
+var LINE_VS = [
+  '#version 300 es',
+  'layout(location=0) in vec3 aPos;',
+  'uniform mat4 uMVP;',
+  'void main(){ gl_Position = uMVP * vec4(aPos, 1.0); }'
+].join('\n');
+
+var LINE_FS = [
+  '#version 300 es',
+  'precision highp float;',
+  'uniform vec4 uColor;',
+  'out vec4 fragColor;',
+  'void main(){ fragColor = uColor; }'
+].join('\n');
+
+var CAP_VS = [
+  '#version 300 es',
+  'layout(location=0) in vec3 aPos;',
+  'uniform mat4 uMVP;',
+  'out vec3 vWorld;',
+  'void main(){ vWorld = aPos; gl_Position = uMVP * vec4(aPos, 1.0); }'
+].join('\n');
+
+var CAP_FS = [
+  '#version 300 es',
+  'precision highp float;',
+  'in vec3 vWorld;',
+  'uniform vec4 uClip[6];',
+  'uniform int uClipCount;',
+  'uniform vec3 uColor;',
+  'out vec4 fragColor;',
+  'void main(){',
+  '  for(int i=0;i<6;i++){',
+  '    if(i >= uClipCount) break;',
+  '    if(dot(vec4(vWorld,1.0), uClip[i]) > 0.0001) discard;',
+  '  }',
+  '  fragColor = vec4(pow(uColor, vec3(0.4545)), 1.0);',
+  '}'
+].join('\n');
+
+function compileShader(gl, type, src) {
+  var sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    var log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error('シェーダのコンパイルに失敗しました: ' + log);
+  }
+  return sh;
+}
+
+function createProgram(gl, vsSrc, fsSrc) {
+  var vs = compileShader(gl, gl.VERTEX_SHADER, vsSrc);
+  var fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSrc);
+  var p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    var log = gl.getProgramInfoLog(p);
+    gl.deleteProgram(p);
+    throw new Error('シェーダのリンクに失敗しました: ' + log);
+  }
+  var uniforms = {};
+  var count = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (var i = 0; i < count; i++) {
+    var info = gl.getActiveUniform(p, i);
+    var name = info.name.replace(/\[0\]$/, '');
+    uniforms[name] = gl.getUniformLocation(p, name);
+  }
+  return { program: p, u: uniforms };
+}
+
+// 動的な線分バッファ (グリッド、バウンディングボックス、断面輪郭など)
+function createDynamicLineBuffer(gl) {
+  var vao = gl.createVertexArray();
+  var vbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  return {
+    vao: vao, vbo: vbo, count: 0,
+    upload: function (arr) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, arr, gl.DYNAMIC_DRAW);
+      this.count = arr.length / 3;
+    }
+  };
+}
+
+// ===== 60_view.js =====
+// ---------------------------------------------------------------------------
+// カメラとビューポート
+// 3 面図は JIS 第三角法の配置 (左上: 平面図 / 左下: 正面図 / 右下: 右側面図)
+// 3 つの正投影ビューは中心と縮尺を共有し、投影図として整合させる
+// ---------------------------------------------------------------------------
+
+var VIEW_DIRS = {
+  front: { name: '正面図', dir: [0, -1, 0], up: [0, 0, 1], hAxis: 0, vAxis: 2, hSign: 1, vSign: 1 },
+  back: { name: '背面図', dir: [0, 1, 0], up: [0, 0, 1], hAxis: 0, vAxis: 2, hSign: -1, vSign: 1 },
+  right: { name: '右側面図', dir: [1, 0, 0], up: [0, 0, 1], hAxis: 1, vAxis: 2, hSign: 1, vSign: 1 },
+  left: { name: '左側面図', dir: [-1, 0, 0], up: [0, 0, 1], hAxis: 1, vAxis: 2, hSign: -1, vSign: 1 },
+  top: { name: '平面図', dir: [0, 0, 1], up: [0, 1, 0], hAxis: 0, vAxis: 1, hSign: 1, vSign: 1 },
+  bottom: { name: '底面図', dir: [0, 0, -1], up: [0, 1, 0], hAxis: 0, vAxis: 1, hSign: -1, vSign: 1 }
+};
+
+function makeOrbitCamera() {
+  return { yaw: -55 * Math.PI / 180, pitch: 28 * Math.PI / 180, center: [0, 0, 0], height: 240, persp: true, fov: 35 * Math.PI / 180 };
+}
+
+function orbitEye(cam, radius) {
+  var d = radius;
+  var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  return [
+    cam.center[0] + Math.cos(cam.yaw) * cp * d,
+    cam.center[1] + Math.sin(cam.yaw) * cp * d,
+    cam.center[2] + sp * d
+  ];
+}
+
+function orbitAxes(cam) {
+  var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  var fwd = [-Math.cos(cam.yaw) * cp, -Math.sin(cam.yaw) * cp, -sp];
+  var right = V3.norm([0, 0, 0], V3.cross([0, 0, 0], fwd, [0, 0, 1]));
+  var up = V3.norm([0, 0, 0], V3.cross([0, 0, 0], right, fwd));
+  return { fwd: fwd, right: right, up: up };
+}
+
+// ビューポートの view/proj を構築する
+// vp: {kind:'ortho'|'orbit', key:'front'|..., rect:{x,y,w,h}}
+function buildViewMatrices(vp, cam, sceneRadius) {
+  var view = M4.create(), proj = M4.create();
+  var aspect = vp.rect.w / Math.max(1, vp.rect.h);
+  var R = Math.max(sceneRadius, 1);
+  var dist = R * 6 + 100;
+  if (vp.kind === 'orbit' && cam.persp) {
+    // 透視投影では注視点での見かけの高さが cam.height になる距離を用いる
+    dist = Math.max((cam.height / 2) / Math.tan(cam.fov / 2), R * 1.2 + 10);
+  }
+  if (vp.kind === 'ortho') {
+    var d = VIEW_DIRS[vp.key];
+    var eye = [cam.center[0] + d.dir[0] * dist, cam.center[1] + d.dir[1] * dist, cam.center[2] + d.dir[2] * dist];
+    M4.lookAt(view, eye, cam.center, d.up);
+    var h = cam.height / 2, w = h * aspect;
+    M4.ortho(proj, -w, w, -h, h, 0.01, dist * 2 + R * 4);
+  } else {
+    var eye2 = orbitEye(cam, dist);
+    M4.lookAt(view, eye2, cam.center, [0, 0, 1]);
+    if (cam.persp) {
+      M4.perspective(proj, cam.fov, aspect, Math.max(0.5, dist - R * 3), dist + R * 8);
+    } else {
+      var h2 = cam.height / 2, w2 = h2 * aspect;
+      M4.ortho(proj, -w2, w2, -h2, h2, 0.01, dist * 2 + R * 4);
+    }
+  }
+  var vpm = M4.mul(M4.create(), proj, view);
+  return { view: view, proj: proj, vp: vpm, eye: vp.kind === 'ortho' ? null : orbitEye(cam, dist), dist: dist };
+}
+
+// ワールド座標 -> canvas ピクセル座標 (左上原点)
+function projectToScreen(vpm, rect, canvasH, p) {
+  var x = vpm[0] * p[0] + vpm[4] * p[1] + vpm[8] * p[2] + vpm[12];
+  var y = vpm[1] * p[0] + vpm[5] * p[1] + vpm[9] * p[2] + vpm[13];
+  var w = vpm[3] * p[0] + vpm[7] * p[1] + vpm[11] * p[2] + vpm[15];
+  if (Math.abs(w) < 1e-9) return null;
+  var ndcX = x / w, ndcY = y / w;
+  return [
+    rect.x + (ndcX * 0.5 + 0.5) * rect.w,
+    (canvasH - rect.y - rect.h) + (1 - (ndcY * 0.5 + 0.5)) * rect.h
+  ];
+}
+
+// canvas ピクセル座標 -> レイ (origin, dir)
+function screenToRay(mats, rect, canvasH, px, py) {
+  var inv = M4.invert(M4.create(), mats.vp);
+  if (!inv) return null;
+  var ndcX = ((px - rect.x) / rect.w) * 2 - 1;
+  var yInView = py - (canvasH - rect.y - rect.h);
+  var ndcY = (1 - (yInView / rect.h)) * 2 - 1;
+  var pNear = M4.xformPoint([0, 0, 0], inv, [ndcX, ndcY, -1]);
+  var pFar = M4.xformPoint([0, 0, 0], inv, [ndcX, ndcY, 1]);
+  var dir = V3.norm([0, 0, 0], V3.sub([0, 0, 0], pFar, pNear));
+  return { origin: pNear, dir: dir };
+}
+
+// ===== 70_scene.js =====
+// ---------------------------------------------------------------------------
+// シーン (パーツ集合、ビルドプレート、選択状態)
+// ---------------------------------------------------------------------------
+
+var MATERIALS = [
+  { name: 'PLA', density: 1.24 },
+  { name: 'PETG', density: 1.27 },
+  { name: 'ABS', density: 1.04 },
+  { name: 'ASA', density: 1.07 },
+  { name: 'TPU 95A', density: 1.21 },
+  { name: 'Nylon (PA)', density: 1.14 },
+  { name: 'Resin (標準)', density: 1.10 }
+];
+
+var partSeq = 0;
+
+function createPart(name, positions, fileSize, format) {
+  var mass = computeMassProperties(positions);
+  var flipped = false;
+  if (mass.volume < 0) {
+    // 三角形の向きが内向き。表裏を反転して以降の判定を正しくする
+    flipWinding(positions);
+    mass = computeMassProperties(positions);
+    flipped = true;
+  }
+  var welded = null, topo = null;
+  var bounds = computeBounds(positions);
+  var diag = V3.len(bounds.size) || 1;
+  try {
+    welded = weldVertices(positions, Math.max(diag * 1e-6, 1e-5));
+    topo = analyzeTopology(welded.index, welded.vertexCount);
+  } catch (e) {
+    topo = null;
+  }
+  var part = {
+    id: ++partSeq,
+    name: name,
+    positions: positions,
+    normals: buildFlatNormals(positions),
+    triangleCount: positions.length / 9,
+    localBounds: bounds,
+    mass: mass,
+    topology: topo,
+    vertexCount: welded ? welded.vertexCount : positions.length / 3,
+    normalsFlipped: flipped,
+    fileSize: fileSize,
+    format: format,
+    color: PALETTE[(partSeq - 1) % PALETTE.length].slice(),
+    visible: true,
+    pos: [0, 0, 0],
+    quat: [0, 0, 0, 1],
+    scale: [1, 1, 1],
+    matrix: M4.create(),
+    worldBounds: null,
+    bvh: null,
+    gpu: null,
+    stats: null
+  };
+  updatePartMatrix(part);
+  return part;
+}
+
+function updatePartMatrix(part) {
+  M4.compose(part.matrix, part.pos, part.quat, part.scale);
+  part.worldBounds = computeWorldBounds(part);
+  part.stats = null;
+  return part;
+}
+
+// 厳密なワールド AABB (回転後も正確な寸法を得るため全頂点を変換する)
+function computeWorldBounds(part) {
+  var m = part.matrix, p = part.positions;
+  var minx = Infinity, miny = Infinity, minz = Infinity;
+  var maxx = -Infinity, maxy = -Infinity, maxz = -Infinity;
+  var m0 = m[0], m4 = m[4], m8 = m[8], m12 = m[12];
+  var m1 = m[1], m5 = m[5], m9 = m[9], m13 = m[13];
+  var m2 = m[2], m6 = m[6], m10 = m[10], m14 = m[14];
+  for (var i = 0; i < p.length; i += 3) {
+    var x = p[i], y = p[i + 1], z = p[i + 2];
+    var wx = m0 * x + m4 * y + m8 * z + m12;
+    var wy = m1 * x + m5 * y + m9 * z + m13;
+    var wz = m2 * x + m6 * y + m10 * z + m14;
+    if (wx < minx) minx = wx; if (wx > maxx) maxx = wx;
+    if (wy < miny) miny = wy; if (wy > maxy) maxy = wy;
+    if (wz < minz) minz = wz; if (wz > maxz) maxz = wz;
+  }
+  if (!isFinite(minx)) { minx = miny = minz = 0; maxx = maxy = maxz = 0; }
+  return {
+    min: [minx, miny, minz], max: [maxx, maxy, maxz],
+    size: [maxx - minx, maxy - miny, maxz - minz]
+  };
+}
+
+function partVolume(part) {
+  var s = part.scale;
+  return part.mass.volume * Math.abs(s[0] * s[1] * s[2]);
+}
+
+function partArea(part) {
+  // 一様スケール時のみ厳密。非一様の場合は近似値として扱う
+  var s = part.scale;
+  var f = Math.pow(Math.abs(s[0] * s[1] * s[2]), 2 / 3);
+  return part.mass.area * f;
+}
+
+function dropToBed(part) {
+  part.pos[2] -= part.worldBounds.min[2];
+  updatePartMatrix(part);
+}
+
+function centerPartOnBed(part, bed) {
+  var wb = part.worldBounds;
+  var cx = (wb.min[0] + wb.max[0]) / 2, cy = (wb.min[1] + wb.max[1]) / 2;
+  part.pos[0] += bed[0] / 2 - cx;
+  part.pos[1] += bed[1] / 2 - cy;
+  updatePartMatrix(part);
+  dropToBed(part);
+}
+
+function rotatePartAroundCenter(part, quatDelta) {
+  var before = part.worldBounds;
+  var cx = (before.min[0] + before.max[0]) / 2;
+  var cy = (before.min[1] + before.max[1]) / 2;
+  part.quat = Quat.norm(Quat.mul(quatDelta, part.quat));
+  updatePartMatrix(part);
+  var after = part.worldBounds;
+  part.pos[0] += cx - (after.min[0] + after.max[0]) / 2;
+  part.pos[1] += cy - (after.min[1] + after.max[1]) / 2;
+  updatePartMatrix(part);
+  dropToBed(part);
+}
+
+function sceneBounds(parts, visibleOnly) {
+  var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  var found = false;
+  for (var i = 0; i < parts.length; i++) {
+    if (visibleOnly && !parts[i].visible) continue;
+    var b = parts[i].worldBounds;
+    found = true;
+    for (var k = 0; k < 3; k++) {
+      if (b.min[k] < min[k]) min[k] = b.min[k];
+      if (b.max[k] > max[k]) max[k] = b.max[k];
+    }
+  }
+  if (!found) return null;
+  return { min: min, max: max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+}
+
+function ensureBVH(part) {
+  if (!part.bvh) part.bvh = buildBVH(part.positions, 8);
+  return part.bvh;
+}
+
+// パーツをベッド上に整列配置する (フットプリントの大きい順に行詰め)
+function arrangeParts(parts, bed, margin) {
+  var m = margin === undefined ? 5 : margin;
+  var list = parts.filter(function (p) { return p.visible; });
+  list.sort(function (a, b) {
+    return (b.worldBounds.size[0] * b.worldBounds.size[1]) - (a.worldBounds.size[0] * a.worldBounds.size[1]);
+  });
+  var cursorX = m, cursorY = m, rowH = 0;
+  var placed = [];
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    var w = p.worldBounds.size[0], d = p.worldBounds.size[1];
+    if (cursorX + w > bed[0] - m && cursorX > m) {
+      cursorX = m; cursorY += rowH + m; rowH = 0;
+    }
+    var dx = cursorX - p.worldBounds.min[0];
+    var dy = cursorY - p.worldBounds.min[1];
+    p.pos[0] += dx; p.pos[1] += dy;
+    updatePartMatrix(p);
+    dropToBed(p);
+    cursorX += w + m;
+    if (d > rowH) rowH = d;
+    placed.push(p);
+  }
+  return placed;
+}
+
+// パーツ間干渉: AABB で粗判定した後、三角形レベルで確認する
+function detectCollisions(parts, maxTests) {
+  var res = [];
+  var budget = maxTests || 400000;
+  var list = parts.filter(function (p) { return p.visible; });
+  for (var i = 0; i < list.length; i++) {
+    for (var j = i + 1; j < list.length; j++) {
+      var a = list[i], b = list[j];
+      if (!aabbOverlap(a.worldBounds, b.worldBounds, 0)) continue;
+      var hit = trianglesIntersect(a, b, budget);
+      res.push({ a: a, b: b, exact: hit.decided, intersect: hit.hit });
+    }
+  }
+  return res;
+}
+
+function trianglesIntersect(a, b, budget) {
+  ensureBVH(a); ensureBVH(b);
+  // b の三角形を a のローカル空間へ変換して a の BVH と照合する
+  var invA = M4.invert(M4.create(), a.matrix);
+  if (!invA) return { hit: true, decided: false };
+  var toA = M4.mul(M4.create(), invA, b.matrix);
+  var tests = 0;
+  var bTri = b.positions.length / 9;
+  var step = 1;
+  if (bTri > 40000) step = Math.ceil(bTri / 40000);
+  var p0 = [0, 0, 0], p1 = [0, 0, 0], p2 = [0, 0, 0];
+  for (var t = 0; t < bTri; t += step) {
+    var q = t * 9;
+    M4.xformPoint(p0, toA, [b.positions[q], b.positions[q + 1], b.positions[q + 2]]);
+    M4.xformPoint(p1, toA, [b.positions[q + 3], b.positions[q + 4], b.positions[q + 5]]);
+    M4.xformPoint(p2, toA, [b.positions[q + 6], b.positions[q + 7], b.positions[q + 8]]);
+    var mn = [Math.min(p0[0], p1[0], p2[0]), Math.min(p0[1], p1[1], p2[1]), Math.min(p0[2], p1[2], p2[2])];
+    var mx = [Math.max(p0[0], p1[0], p2[0]), Math.max(p0[1], p1[1], p2[1]), Math.max(p0[2], p1[2], p2[2])];
+    var stack = [0];
+    var bvh = a.bvh;
+    while (stack.length) {
+      var node = stack.pop();
+      var base = node * 3;
+      if (bvh.nodeMax[base] < mn[0] || bvh.nodeMin[base] > mx[0] ||
+        bvh.nodeMax[base + 1] < mn[1] || bvh.nodeMin[base + 1] > mx[1] ||
+        bvh.nodeMax[base + 2] < mn[2] || bvh.nodeMin[base + 2] > mx[2]) continue;
+      var count = bvh.nodeData[base + 2];
+      if (count > 0) {
+        var start = bvh.nodeData[base + 1];
+        for (var k = 0; k < count; k++) {
+          var ti = bvh.triIndex[start + k] * 9;
+          tests++;
+          if (triTriIntersect(
+            [a.positions[ti], a.positions[ti + 1], a.positions[ti + 2]],
+            [a.positions[ti + 3], a.positions[ti + 4], a.positions[ti + 5]],
+            [a.positions[ti + 6], a.positions[ti + 7], a.positions[ti + 8]],
+            p0, p1, p2)) {
+            return { hit: true, decided: true };
+          }
+        }
+      } else {
+        stack.push(bvh.nodeData[base]);
+        stack.push(bvh.nodeData[base + 1]);
+      }
+    }
+    if (tests > budget) return { hit: false, decided: false };
+  }
+  return { hit: false, decided: step === 1 };
+}
+
+// ステージ (矩形 / 円形) の平面範囲に収まっているか判定する
+function outsideBedXY(bounds, bed, shape) {
+  var eps = 0.01;
+  if (shape === 'circle') {
+    var r = bed[0] / 2, cx = r, cy = bed[1] / 2;
+    for (var i = 0; i < 4; i++) {
+      var x = (i & 1) ? bounds.max[0] : bounds.min[0];
+      var y = (i & 2) ? bounds.max[1] : bounds.min[1];
+      if (Math.hypot(x - cx, y - cy) > r + eps) return true;
+    }
+    return false;
+  }
+  return bounds.min[0] < -eps || bounds.min[1] < -eps ||
+    bounds.max[0] > bed[0] + eps || bounds.max[1] > bed[1] + eps;
+}
+
+// ===== 80_render.js =====
+// ---------------------------------------------------------------------------
+// 描画
+// ---------------------------------------------------------------------------
+
+function initRenderer(canvas) {
+  var gl = canvas.getContext('webgl2', {
+    antialias: true, stencil: true, depth: true,
+    preserveDrawingBuffer: true, powerPreference: 'high-performance'
+  });
+  if (!gl) throw new Error('WebGL2 を利用できません。対応ブラウザで開いてください。');
+  var R = {
+    gl: gl,
+    canvas: canvas,
+    mesh: createProgram(gl, MESH_VS, MESH_FS),
+    line: createProgram(gl, LINE_VS, LINE_FS),
+    cap: createProgram(gl, CAP_VS, CAP_FS),
+    gridBuf: createDynamicLineBuffer(gl),
+    boxBuf: createDynamicLineBuffer(gl),
+    auxBuf: createDynamicLineBuffer(gl),
+    capBuf: createDynamicLineBuffer(gl),
+    dpr: 1
+  };
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.disable(gl.CULL_FACE);
+  return R;
+}
+
+function uploadPartGPU(R, part) {
+  var gl = R.gl;
+  if (part.gpu) return part.gpu;
+  if (!part.normals) part.normals = buildFlatNormals(part.positions);
+  var vao = gl.createVertexArray();
+  var pbo = gl.createBuffer();
+  var nbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pbo);
+  gl.bufferData(gl.ARRAY_BUFFER, part.positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo);
+  gl.bufferData(gl.ARRAY_BUFFER, part.normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  part.gpu = { vao: vao, pbo: pbo, nbo: nbo, count: part.positions.length / 3 };
+  // GPU 転送後は展開済み法線を解放する (面法線は必要時に再計算)
+  part.normals = null;
+  return part.gpu;
+}
+
+function disposePartGPU(R, part) {
+  if (!part.gpu) return;
+  var gl = R.gl;
+  gl.deleteVertexArray(part.gpu.vao);
+  gl.deleteBuffer(part.gpu.pbo);
+  gl.deleteBuffer(part.gpu.nbo);
+  part.gpu = null;
+}
+
+// クリップ平面を vec4 配列 (法線 xyz, オフセット w) に変換する
+function activeClipPlanes(app, excludeIndex) {
+  var out = [];
+  for (var i = 0; i < app.clips.length; i++) {
+    var c = app.clips[i];
+    if (!c.enabled) continue;
+    if (excludeIndex === i) continue;
+    var n = [0, 0, 0];
+    n[c.axis] = c.invert ? -1 : 1;
+    var d = c.invert ? c.value : -c.value;
+    out.push([n[0], n[1], n[2], d]);
+  }
+  return out;
+}
+
+function clipUniformArray(planes) {
+  var arr = new Float32Array(24);
+  for (var i = 0; i < planes.length && i < 6; i++) {
+    arr[i * 4] = planes[i][0]; arr[i * 4 + 1] = planes[i][1];
+    arr[i * 4 + 2] = planes[i][2]; arr[i * 4 + 3] = planes[i][3];
+  }
+  return arr;
+}
+
+// ステージのグリッド線。円形ステージでは円内に収まる範囲のみ引く
+function buildGridLines(bed, step, shape) {
+  var v = [];
+  var s = step > 0 ? step : 10;
+  // 線数が過大にならないよう間隔を自動調整する
+  var maxLines = 400;
+  while ((bed[0] / s + bed[1] / s) > maxLines) s *= 2;
+  var strongEvery = s * 5;
+  var i;
+  var circle = shape === 'circle';
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2;
+  function spanY(x) {
+    if (!circle) return [0, bed[1]];
+    var dx = x - cx;
+    if (Math.abs(dx) >= r) return null;
+    var h = Math.sqrt(r * r - dx * dx);
+    return [cy - h, cy + h];
+  }
+  function spanX(y) {
+    if (!circle) return [0, bed[0]];
+    var dy = y - cy;
+    if (Math.abs(dy) >= r) return null;
+    var h = Math.sqrt(r * r - dy * dy);
+    return [cx - h, cx + h];
+  }
+  for (i = 0; i <= bed[0] + 1e-6; i += s) {
+    var sy = spanY(i);
+    if (!sy) continue;
+    var strong = Math.abs(i % strongEvery) < 1e-6;
+    v.push(i, sy[0], 0, i, sy[1], 0);
+    if (strong) { /* 太線の代替として二重線を引く */ v.push(i + 0.15, sy[0], 0, i + 0.15, sy[1], 0); }
+  }
+  for (i = 0; i <= bed[1] + 1e-6; i += s) {
+    var sx = spanX(i);
+    if (!sx) continue;
+    var strong2 = Math.abs(i % strongEvery) < 1e-6;
+    v.push(sx[0], i, 0, sx[1], i, 0);
+    if (strong2) { v.push(sx[0], i + 0.15, 0, sx[1], i + 0.15, 0); }
+  }
+  return new Float32Array(v);
+}
+
+// 円形ステージの造形可能領域 (円柱) の輪郭
+function buildCylinderLines(bed, segments) {
+  var n = segments || 72;
+  var r = bed[0] / 2, cx = bed[0] / 2, cy = bed[1] / 2, h = bed[2];
+  var v = [];
+  for (var i = 0; i < n; i++) {
+    var a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    v.push(x0, y0, 0, x1, y1, 0);
+    v.push(x0, y0, h, x1, y1, h);
+  }
+  for (var k = 0; k < 4; k++) {
+    var a = (k / 4) * Math.PI * 2;
+    var x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+    v.push(x, y, 0, x, y, h);
+  }
+  return v;
+}
+
+function buildBoxLines(min, max, out) {
+  var v = out || [];
+  var c = [
+    [min[0], min[1], min[2]], [max[0], min[1], min[2]], [max[0], max[1], min[2]], [min[0], max[1], min[2]],
+    [min[0], min[1], max[2]], [max[0], min[1], max[2]], [max[0], max[1], max[2]], [min[0], max[1], max[2]]
+  ];
+  var e = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  for (var i = 0; i < e.length; i++) {
+    var a = c[e[i][0]], b = c[e[i][1]];
+    v.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+  }
+  return v;
+}
+
+function computeViewports(app, W, H) {
+  if (app.layout === 'quad') {
+    var hw = Math.floor(W / 2), hh = Math.floor(H / 2);
+    // GL のビューポートは左下原点。JIS 第三角法: 左上=平面図, 左下=正面図, 右下=右側面図
+    return [
+      { key: 'top', kind: 'ortho', rect: { x: 0, y: hh, w: hw, h: H - hh } },
+      { key: 'iso', kind: 'orbit', rect: { x: hw, y: hh, w: W - hw, h: H - hh } },
+      { key: 'front', kind: 'ortho', rect: { x: 0, y: 0, w: hw, h: hh } },
+      { key: 'right', kind: 'ortho', rect: { x: hw, y: 0, w: W - hw, h: hh } }
+    ];
+  }
+  var v = app.singleView;
+  return [{ key: v, kind: (v === 'iso' ? 'orbit' : 'ortho'), rect: { x: 0, y: 0, w: W, h: H } }];
+}
+
+function renderFrame(app) {
+  var R = app.R, gl = R.gl;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var cw = Math.max(1, Math.floor(R.canvas.clientWidth * dpr));
+  var ch = Math.max(1, Math.floor(R.canvas.clientHeight * dpr));
+  if (R.canvas.width !== cw || R.canvas.height !== ch) {
+    R.canvas.width = cw; R.canvas.height = ch;
+  }
+  R.dpr = dpr;
+  var sb = sceneBounds(app.parts, true);
+  var radius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  if (app.showBed) radius = Math.max(radius, V3.len([app.bed[0], app.bed[1], app.bed[2]]) / 2);
+  var vps = computeViewports(app, cw, ch);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.clearColor(0.086, 0.094, 0.110, 1);
+  var overlays = [];
+  for (var i = 0; i < vps.length; i++) {
+    var vp = vps[i];
+    var cam = (vp.kind === 'orbit') ? app.orbitCam : app.orthoCam;
+    gl.viewport(vp.rect.x, vp.rect.y, vp.rect.w, vp.rect.h);
+    gl.scissor(vp.rect.x, vp.rect.y, vp.rect.w, vp.rect.h);
+    gl.clearStencil(0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+    var mats = buildViewMatrices(vp, cam, radius);
+    drawScene(app, vp, mats, sb);
+    overlays.push({ vp: vp, mats: mats });
+  }
+  gl.disable(gl.SCISSOR_TEST);
+  app.lastViewports = overlays;
+  updateOverlay(app, overlays, cw, ch, dpr, sb);
+}
+
+function drawScene(app, vp, mats, sb) {
+  var R = app.R, gl = R.gl;
+  var planes = activeClipPlanes(app, -1);
+  var clipArr = clipUniformArray(planes);
+
+  // --- ベッドとグリッド ---
+  if (app.showBed) {
+    gl.useProgram(R.line.program);
+    gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+    if (!R.gridDirty && R.gridBuf.count > 0) { /* 再利用 */ } else {
+      R.gridBuf.upload(buildGridLines(app.bed, app.gridStep, app.bedShape));
+      R.gridDirty = false;
+    }
+    gl.uniform4f(R.line.u.uColor, 0.30, 0.34, 0.40, 1);
+    gl.bindVertexArray(R.gridBuf.vao);
+    gl.drawArrays(gl.LINES, 0, R.gridBuf.count);
+    // 造形可能領域の枠
+    var box = app.bedShape === 'circle'
+      ? buildCylinderLines(app.bed)
+      : buildBoxLines([0, 0, 0], [app.bed[0], app.bed[1], app.bed[2]]);
+    R.boxBuf.upload(new Float32Array(box));
+    gl.uniform4f(R.line.u.uColor, 0.45, 0.52, 0.62, 1);
+    gl.bindVertexArray(R.boxBuf.vao);
+    gl.drawArrays(gl.LINES, 0, R.boxBuf.count);
+  }
+
+  // --- メッシュ ---
+  gl.useProgram(R.mesh.program);
+  gl.uniform4fv(R.mesh.u.uClip, clipArr);
+  gl.uniform1i(R.mesh.u.uClipCount, planes.length);
+  gl.uniform1i(R.mesh.u.uShadeMode, app.shadeMode);
+  gl.uniform1f(R.mesh.u.uOverhangSin, Math.sin(app.overhangDeg * Math.PI / 180));
+  gl.uniform1f(R.mesh.u.uBedZ, 0);
+  gl.uniform1f(R.mesh.u.uHeightMax, sb ? Math.max(sb.max[2], 1) : 1);
+  gl.disable(gl.CULL_FACE);
+  var transparent = [];
+  var i;
+  for (i = 0; i < app.parts.length; i++) {
+    var part = app.parts[i];
+    if (!part.visible) continue;
+    var opacity = 1;
+    if (app.ghostOthers && app.selection && part.id !== app.selection) opacity = 0.25;
+    if (app.xray) opacity = Math.min(opacity, 0.35);
+    if (opacity < 1) { transparent.push(part); continue; }
+    drawPart(app, part, mats, 1);
+  }
+  if (transparent.length) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    for (i = 0; i < transparent.length; i++) {
+      var op = app.xray ? 0.35 : 0.25;
+      drawPart(app, transparent[i], mats, op);
+    }
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  // --- 断面キャップ ---
+  for (i = 0; i < app.clips.length; i++) {
+    if (!app.clips[i].enabled || !app.clips[i].cap) continue;
+    drawSectionCap(app, i, mats, sb);
+  }
+
+  // --- 補助線 ---
+  var aux = [];
+  if (app.showBBox) {
+    for (i = 0; i < app.parts.length; i++) {
+      var p2 = app.parts[i];
+      if (!p2.visible) continue;
+      if (app.selection && p2.id !== app.selection) continue;
+      buildBoxLines(p2.worldBounds.min, p2.worldBounds.max, aux);
+    }
+  }
+  if (app.measure.points.length === 2) {
+    var m0 = app.measure.points[0], m1 = app.measure.points[1];
+    aux.push(m0[0], m0[1], m0[2], m1[0], m1[1], m1[2]);
+    pushCrossMarks(aux, m0, 1.5);
+    pushCrossMarks(aux, m1, 1.5);
+  } else if (app.measure.points.length === 1) {
+    pushCrossMarks(aux, app.measure.points[0], 1.5);
+  }
+  if (app.contourLines && app.contourLines.length) {
+    for (i = 0; i < app.contourLines.length; i++) aux.push(app.contourLines[i]);
+  }
+  if (aux.length) {
+    gl.useProgram(R.line.program);
+    gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+    gl.uniform4f(R.line.u.uColor, 0.98, 0.85, 0.35, 1);
+    R.auxBuf.upload(new Float32Array(aux));
+    gl.bindVertexArray(R.auxBuf.vao);
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.LINES, 0, R.auxBuf.count);
+    gl.enable(gl.DEPTH_TEST);
+  }
+  gl.bindVertexArray(null);
+}
+
+function pushCrossMarks(arr, p, s) {
+  arr.push(p[0] - s, p[1], p[2], p[0] + s, p[1], p[2]);
+  arr.push(p[0], p[1] - s, p[2], p[0], p[1] + s, p[2]);
+  arr.push(p[0], p[1], p[2] - s, p[0], p[1], p[2] + s);
+}
+
+function drawPart(app, part, mats, opacity) {
+  var R = app.R, gl = R.gl;
+  var gpu = uploadPartGPU(R, part);
+  var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
+  var nrm = M4.normalMatrix(M4.create(), part.matrix);
+  gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
+  gl.uniformMatrix4fv(R.mesh.u.uModel, false, part.matrix);
+  gl.uniformMatrix4fv(R.mesh.u.uNormalMat, false, nrm);
+  gl.uniform3fv(R.mesh.u.uColor, part.color);
+  gl.uniform1f(R.mesh.u.uOpacity, opacity);
+  gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
+  gl.bindVertexArray(gpu.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+}
+
+// ステンシルで断面を塞ぐ (中空・肉厚の確認用)
+function drawSectionCap(app, clipIndex, mats, sb) {
+  var R = app.R, gl = R.gl;
+  var clip = app.clips[clipIndex];
+  var allPlanes = activeClipPlanes(app, -1);
+  var others = activeClipPlanes(app, clipIndex);
+
+  gl.enable(gl.STENCIL_TEST);
+  gl.clearStencil(0);
+  gl.clear(gl.STENCIL_BUFFER_BIT); // 平面ごとにカウントをリセットする
+  gl.colorMask(false, false, false, false);
+  gl.depthMask(false);
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.stencilFunc(gl.ALWAYS, 0, 0xff);
+
+  gl.useProgram(R.mesh.program);
+  gl.uniform4fv(R.mesh.u.uClip, clipUniformArray(allPlanes));
+  gl.uniform1i(R.mesh.u.uClipCount, allPlanes.length);
+  gl.uniform1f(R.mesh.u.uOpacity, 1);
+
+  var i;
+  gl.cullFace(gl.FRONT);
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR_WRAP);
+  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  gl.cullFace(gl.BACK);
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR_WRAP);
+  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+
+  gl.colorMask(true, true, true, true);
+  gl.depthMask(true);
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.stencilFunc(gl.NOTEQUAL, 0, 0xff);
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+
+  // 平面上の大きな四角形を描く
+  var n = [0, 0, 0];
+  n[clip.axis] = clip.invert ? -1 : 1;
+  var center = [0, 0, 0];
+  if (sb) { for (i = 0; i < 3; i++) center[i] = (sb.min[i] + sb.max[i]) / 2; }
+  center[clip.axis] = clip.value;
+  var radius = sb ? V3.len(sb.size) : 200;
+  var a = Math.abs(n[0]) > 0.5 ? [0, 1, 0] : [1, 0, 0];
+  var u = V3.norm([0, 0, 0], V3.cross([0, 0, 0], n, a));
+  var v = V3.norm([0, 0, 0], V3.cross([0, 0, 0], n, u));
+  var quad = [];
+  var corners = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+  for (i = 0; i < corners.length; i++) {
+    var cu = corners[i][0] * radius, cv = corners[i][1] * radius;
+    quad.push(center[0] + u[0] * cu + v[0] * cv, center[1] + u[1] * cu + v[1] * cv, center[2] + u[2] * cu + v[2] * cv);
+  }
+  R.capBuf.upload(new Float32Array(quad));
+  gl.useProgram(R.cap.program);
+  gl.uniformMatrix4fv(R.cap.u.uMVP, false, mats.vp);
+  gl.uniform4fv(R.cap.u.uClip, clipUniformArray(others));
+  gl.uniform1i(R.cap.u.uClipCount, others.length);
+  gl.uniform3f(R.cap.u.uColor, 0.85, 0.42, 0.30);
+  gl.bindVertexArray(R.capBuf.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, R.capBuf.count);
+  gl.disable(gl.STENCIL_TEST);
+
+  // メッシュ側の uniform を戻す
+  gl.useProgram(R.mesh.program);
+  var planes = activeClipPlanes(app, -1);
+  gl.uniform4fv(R.mesh.u.uClip, clipUniformArray(planes));
+  gl.uniform1i(R.mesh.u.uClipCount, planes.length);
+}
+
+// ---------------------------------------------------------------------------
+// SVG オーバーレイ (寸法線・ビュー名・計測値)
+// ---------------------------------------------------------------------------
+
+var SVGNS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs) {
+  var e = document.createElementNS(SVGNS, tag);
+  for (var k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function updateOverlay(app, overlays, cw, ch, dpr, sb) {
+  var svg = app.overlay;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.setAttribute('viewBox', '0 0 ' + (cw / dpr) + ' ' + (ch / dpr));
+  var target = null;
+  if (app.selection) {
+    for (var i = 0; i < app.parts.length; i++) if (app.parts[i].id === app.selection) target = app.parts[i];
+  }
+  var dimBounds = target ? target.worldBounds : sb;
+
+  for (var v = 0; v < overlays.length; v++) {
+    var o = overlays[v];
+    var rect = o.vp.rect;
+    var cssRect = {
+      x: rect.x / dpr,
+      y: (ch - rect.y - rect.h) / dpr,
+      w: rect.w / dpr,
+      h: rect.h / dpr
+    };
+    if (overlays.length > 1) {
+      svg.appendChild(svgEl('rect', {
+        x: cssRect.x + 0.5, y: cssRect.y + 0.5, width: cssRect.w - 1, height: cssRect.h - 1,
+        fill: 'none', stroke: 'rgba(255,255,255,0.10)', 'stroke-width': 1
+      }));
+    }
+    var label = o.vp.kind === 'orbit' ? '等角図' : VIEW_DIRS[o.vp.key].name;
+    var t = svgEl('text', { x: cssRect.x + 10, y: cssRect.y + 20, class: 'vp-label' });
+    t.textContent = label + (o.vp.kind === 'ortho' ? ' (正投影)' : '');
+    svg.appendChild(t);
+
+    if (app.showDims && dimBounds) {
+      if (o.vp.kind === 'ortho') drawOrthoDims(svg, app, o, cssRect, dimBounds, ch, dpr);
+      else drawIsoDims(svg, app, o, cssRect, dimBounds, ch, dpr);
+    }
+    if (app.measure.points.length === 2) {
+      var pA = projectToScreen(o.mats.vp, rect, ch, app.measure.points[0]);
+      var pB = projectToScreen(o.mats.vp, rect, ch, app.measure.points[1]);
+      if (pA && pB) {
+        var mx = (pA[0] + pB[0]) / 2 / dpr, my = (pA[1] + pB[1]) / 2 / dpr;
+        var d = V3.dist(app.measure.points[0], app.measure.points[1]);
+        addLabel(svg, mx, my - 8, fmt(d, 3) + ' mm', 'dim-label measure-label');
+      }
+    }
+  }
+}
+
+function addLabel(svg, x, y, text, cls) {
+  var g = svgEl('g', {});
+  var t = svgEl('text', { x: x, y: y, class: cls || 'dim-label', 'text-anchor': 'middle' });
+  t.textContent = text;
+  g.appendChild(t);
+  svg.appendChild(g);
+  return t;
+}
+
+function dimLine(svg, x1, y1, x2, y2, cls) {
+  svg.appendChild(svgEl('line', { x1: x1, y1: y1, x2: x2, y2: y2, class: cls || 'dim-line' }));
+}
+
+// 正投影ビューでの寸法記入 (水平軸・垂直軸)
+function drawOrthoDims(svg, app, o, cssRect, b, canvasH, dpr) {
+  var d = VIEW_DIRS[o.vp.key];
+  var corners = [];
+  for (var i = 0; i < 8; i++) {
+    corners.push([
+      (i & 1) ? b.max[0] : b.min[0],
+      (i & 2) ? b.max[1] : b.min[1],
+      (i & 4) ? b.max[2] : b.min[2]
+    ]);
+  }
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (i = 0; i < 8; i++) {
+    var s = projectToScreen(o.mats.vp, o.vp.rect, canvasH, corners[i]);
+    if (!s) continue;
+    var sx = s[0] / dpr, sy = s[1] / dpr;
+    if (sx < minX) minX = sx; if (sx > maxX) maxX = sx;
+    if (sy < minY) minY = sy; if (sy > maxY) maxY = sy;
+  }
+  if (!isFinite(minX)) return;
+  var pad = 18;
+  var hVal = b.size[d.hAxis], vVal = b.size[d.vAxis];
+  var axisName = ['X', 'Y', 'Z'];
+  // 水平寸法 (下側)
+  var yLine = Math.min(maxY + pad, cssRect.y + cssRect.h - 14);
+  dimLine(svg, minX, yLine, maxX, yLine);
+  dimLine(svg, minX, maxY + 3, minX, yLine + 4, 'dim-ext');
+  dimLine(svg, maxX, maxY + 3, maxX, yLine + 4, 'dim-ext');
+  addLabel(svg, (minX + maxX) / 2, yLine - 5, axisName[d.hAxis] + ' ' + fmt(hVal, 2) + ' mm');
+  // 垂直寸法 (左側)
+  var xLine = Math.max(minX - pad, cssRect.x + 34);
+  dimLine(svg, xLine, minY, xLine, maxY);
+  dimLine(svg, minX - 3, minY, xLine - 4, minY, 'dim-ext');
+  dimLine(svg, minX - 3, maxY, xLine - 4, maxY, 'dim-ext');
+  var vl = svgEl('text', {
+    x: xLine - 6, y: (minY + maxY) / 2, class: 'dim-label', 'text-anchor': 'middle',
+    transform: 'rotate(-90 ' + (xLine - 6) + ',' + ((minY + maxY) / 2) + ')'
+  });
+  vl.textContent = axisName[d.vAxis] + ' ' + fmt(vVal, 2) + ' mm';
+  svg.appendChild(vl);
+}
+
+// 等角図では各辺の中点にサイズを表示する
+function drawIsoDims(svg, app, o, cssRect, b, canvasH, dpr) {
+  var origin = [b.min[0], b.min[1], b.min[2]];
+  var axes = [
+    { p: [b.max[0], b.min[1], b.min[2]], label: 'X ' + fmt(b.size[0], 2) },
+    { p: [b.min[0], b.max[1], b.min[2]], label: 'Y ' + fmt(b.size[1], 2) },
+    { p: [b.min[0], b.min[1], b.max[2]], label: 'Z ' + fmt(b.size[2], 2) }
+  ];
+  for (var i = 0; i < axes.length; i++) {
+    var mid = [(origin[0] + axes[i].p[0]) / 2, (origin[1] + axes[i].p[1]) / 2, (origin[2] + axes[i].p[2]) / 2];
+    var s = projectToScreen(o.mats.vp, o.vp.rect, canvasH, mid);
+    if (!s) continue;
+    addLabel(svg, s[0] / dpr, s[1] / dpr - 4, axes[i].label);
+  }
+}
+
+// ===== 85_orient.js =====
+// ---------------------------------------------------------------------------
+// 姿勢 (向き) の評価と自動探索
+// ---------------------------------------------------------------------------
+
+// 回転 q を適用し、最低点を Z=0 に置いたときの評価値を返す
+function evaluateOrientation(part, q, overhangDeg, sampleStep) {
+  var m = M4.compose(M4.create(), [0, 0, 0], q, part.scale);
+  var p = part.positions;
+  var minZ = Infinity, maxZ = -Infinity;
+  var m2 = m[2], m6 = m[6], m10 = m[10], m14 = m[14];
+  for (var i = 0; i < p.length; i += 3) {
+    var z = m2 * p[i] + m6 * p[i + 1] + m10 * p[i + 2] + m14;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  m[14] -= minZ;
+  var st = sampleStep || Math.max(1, Math.ceil((p.length / 9) / 60000));
+  var s = overhangStats(p, m, overhangDeg, 0, 0.05, st);
+  var height = maxZ - minZ;
+  return {
+    quat: q,
+    height: height,
+    overhangArea: s.overhangArea,
+    contactArea: s.contactArea,
+    totalArea: s.totalArea,
+    overhangRatio: s.totalArea > 0 ? s.overhangArea / s.totalArea : 0
+  };
+}
+
+// 候補姿勢を列挙して評価する (面積の大きい面を下に向ける候補 + 軸方向)
+function searchOrientations(part, overhangDeg, maxCandidates) {
+  var cands = candidateNormals(part.positions, maxCandidates || 20);
+  var axisNormals = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
+  var qs = [];
+  var seen = new Set();
+  function addQuat(n) {
+    // 法線 n を下向き (0,0,-1) に合わせる
+    var q = Quat.norm(Quat.mul(Quat.fromUnitVectors(n, [0, 0, -1]), part.quat));
+    var key = [q[0], q[1], q[2], q[3]].map(function (x) { return Math.round(x * 200); }).join('_');
+    if (seen.has(key)) return;
+    seen.add(key);
+    qs.push(q);
+  }
+  var i;
+  // 現在の姿勢も候補に含める
+  var cur = part.quat.slice();
+  var curKey = cur.map(function (x) { return Math.round(x * 200); }).join('_');
+  seen.add(curKey);
+  qs.push(cur);
+  for (i = 0; i < cands.length; i++) {
+    // candidateNormals はローカル法線なので現在の回転を適用してから評価する
+    addQuat(Quat.rotate(part.quat, cands[i].n));
+  }
+  for (i = 0; i < axisNormals.length; i++) addQuat(axisNormals[i]);
+  var results = [];
+  for (i = 0; i < qs.length; i++) results.push(evaluateOrientation(part, qs[i], overhangDeg));
+  // サポート面積を主、造形高さを従として評価する
+  var maxH = 1, maxO = 1;
+  for (i = 0; i < results.length; i++) {
+    if (results[i].height > maxH) maxH = results[i].height;
+    if (results[i].overhangArea > maxO) maxO = results[i].overhangArea;
+  }
+  for (i = 0; i < results.length; i++) {
+    var r = results[i];
+    r.score = (r.overhangArea / maxO) * 1.0 + (r.height / maxH) * 0.35 - Math.min(r.contactArea / Math.max(1, r.totalArea), 0.3) * 0.5;
+  }
+  results.sort(function (a, b) { return a.score - b.score; });
+  return results;
+}
+
+// 指定した面 (三角形番号) をビルドプレートに接地させる
+function layFaceOnBed(part, triangleIndex) {
+  var p = triangleIndex * 9;
+  var pos = part.positions;
+  var e1 = [pos[p + 3] - pos[p], pos[p + 4] - pos[p + 1], pos[p + 5] - pos[p + 2]];
+  var e2 = [pos[p + 6] - pos[p], pos[p + 7] - pos[p + 1], pos[p + 8] - pos[p + 2]];
+  var nLocal = V3.norm([0, 0, 0], V3.cross([0, 0, 0], e1, e2));
+  var nWorld = V3.norm([0, 0, 0], Quat.rotate(part.quat, nLocal));
+  var q = Quat.fromUnitVectors(nWorld, [0, 0, -1]);
+  rotatePartAroundCenter(part, q);
+}
+
+// ===== 90_ui.js =====
+// ---------------------------------------------------------------------------
+// UI 配線
+// ---------------------------------------------------------------------------
+
+var PRINTERS = [
+  { name: '汎用 220 x 220 x 250', bed: [220, 220, 250] },
+  { name: 'Ender 3 系 (235 x 235 x 250)', bed: [235, 235, 250] },
+  { name: 'Prusa MK3/MK4 (250 x 210 x 210)', bed: [250, 210, 210] },
+  { name: 'Bambu X1/P1 (256 x 256 x 256)', bed: [256, 256, 256] },
+  { name: 'Voron 2.4 350 (350 x 350 x 340)', bed: [350, 350, 340] },
+  { name: '光造形 (143 x 89 x 175)', bed: [143, 89, 175] },
+  { name: 'デルタ φ180 x 300', bed: [180, 180, 300], shape: 'circle' },
+  { name: 'デルタ φ250 x 400', bed: [250, 250, 400], shape: 'circle' },
+  { name: 'A4 相当の作業領域 (210 x 297)', bed: [210, 297, 200] }
+];
+
+function selectedPart(app) {
+  if (!app.selection) return null;
+  for (var i = 0; i < app.parts.length; i++) if (app.parts[i].id === app.selection) return app.parts[i];
+  return null;
+}
+
+function requestRender(app) {
+  if (app.renderPending) return;
+  app.renderPending = true;
+  requestAnimationFrame(function () {
+    app.renderPending = false;
+    try { renderFrame(app); } catch (e) { setStatus(app, '描画エラー: ' + e.message); }
+  });
+}
+
+function setStatus(app, msg) { $('#status-msg').textContent = msg; }
+
+function setBusy(app, msg) {
+  var b = $('#busy');
+  if (!msg) { b.hidden = true; return; }
+  b.hidden = false;
+  b.firstElementChild.textContent = msg;
+}
+
+// 重い処理の前に画面を更新させる
+function withBusy(app, msg, fn) {
+  setBusy(app, msg);
+  setTimeout(function () {
+    try { fn(); } catch (e) { setStatus(app, 'エラー: ' + e.message); }
+    setBusy(app, null);
+  }, 16);
+}
+
+// ---------------------------------------------------------------------------
+// ファイル読み込み
+// ---------------------------------------------------------------------------
+
+function loadFiles(app, files) {
+  var list = Array.prototype.slice.call(files).filter(function (f) { return /\.stl$/i.test(f.name) || f.type === 'model/stl'; });
+  if (!list.length) { setStatus(app, 'STL ファイルが含まれていません。'); return; }
+  var remaining = list.length;
+  setBusy(app, '読み込み中...');
+  list.forEach(function (file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = parseSTL(reader.result);
+        if (parsed.triangleCount === 0) throw new Error('三角形が 0 個です');
+        var part = createPart(file.name.replace(/\.stl$/i, ''), parsed.positions, file.size, parsed.format);
+        app.parts.push(part);
+        centerPartOnBed(part, app.bed);
+        if (app.parts.length > 1) arrangeParts(app.parts, app.bed, app.margin);
+        app.selection = part.id;
+        setStatus(app, part.name + ' を読み込みました (' + fmtInt(part.triangleCount) + ' 三角形, ' + parsed.format + ', ' + fmtBytes(file.size) + ')');
+      } catch (e) {
+        setStatus(app, file.name + ' の読み込みに失敗しました: ' + e.message);
+      }
+      remaining--;
+      if (remaining === 0) {
+        setBusy(app, null);
+        fitView(app);
+        refreshAll(app);
+        var sb = sceneBounds(app.parts, true);
+        if (sb) $('#in-slice-pos').value = fmt((sb.min[2] + sb.max[2]) / 2, 2);
+      }
+    };
+    reader.onerror = function () {
+      remaining--;
+      setStatus(app, file.name + ' を読み込めませんでした。');
+      if (remaining === 0) { setBusy(app, null); refreshAll(app); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 表示更新
+// ---------------------------------------------------------------------------
+
+function refreshAll(app) {
+  refreshPartList(app);
+  refreshDims(app);
+  refreshQuality(app);
+  refreshWarnings(app);
+  refreshTransformInputs(app);
+  updateClipRanges(app);
+  requestRender(app);
+}
+
+function refreshPartList(app) {
+  var host = $('#part-list');
+  host.innerHTML = '';
+  $('#part-count').textContent = app.parts.length;
+  $('#drop-hint').style.display = app.parts.length ? 'none' : '';
+  app.parts.forEach(function (p) {
+    var row = el('div', { class: 'part' + (app.selection === p.id ? ' selected' : '') + (p.visible ? '' : ' hidden-part') });
+    var color = el('input', { type: 'color', value: rgbToHex(p.color), title: '色' });
+    color.addEventListener('input', function (ev) {
+      p.color = cssToRgb(ev.target.value);
+      requestRender(app);
+    });
+    color.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    var vis = el('button', { class: 'vis', title: '表示 / 非表示', text: p.visible ? '◉' : '○' });
+    vis.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      p.visible = !p.visible;
+      refreshAll(app);
+    });
+    row.appendChild(color);
+    row.appendChild(el('span', { class: 'nm', text: p.name }));
+    row.appendChild(el('span', { class: 'tri', text: fmtInt(p.triangleCount) }));
+    row.appendChild(vis);
+    row.addEventListener('click', function () {
+      app.selection = p.id;
+      refreshAll(app);
+    });
+    host.appendChild(row);
+  });
+}
+
+function targetBounds(app) {
+  var p = selectedPart(app);
+  if (p) return p.worldBounds;
+  return sceneBounds(app.parts, true);
+}
+
+function refreshDims(app) {
+  var p = selectedPart(app);
+  var b = targetBounds(app);
+  $('#measure-target').textContent = p ? p.name : 'シーン全体';
+  var t = $('#tbl-dims');
+  t.innerHTML = '';
+  if (!b) { t.appendChild(kvRow('-', 'パーツがありません')); updateMass(app); return; }
+  t.appendChild(kvRow('X 幅', fmt(b.size[0], 2) + ' mm'));
+  t.appendChild(kvRow('Y 奥行', fmt(b.size[1], 2) + ' mm'));
+  t.appendChild(kvRow('Z 高さ', fmt(b.size[2], 2) + ' mm'));
+  t.appendChild(kvRow('対角', fmt(V3.len(b.size), 2) + ' mm'));
+  t.appendChild(kvRow('X 範囲', fmt(b.min[0], 1) + ' … ' + fmt(b.max[0], 1)));
+  t.appendChild(kvRow('Y 範囲', fmt(b.min[1], 1) + ' … ' + fmt(b.max[1], 1)));
+  t.appendChild(kvRow('Z 範囲', fmt(b.min[2], 1) + ' … ' + fmt(b.max[2], 1)));
+  var vol = 0, area = 0, tri = 0;
+  var list = p ? [p] : app.parts.filter(function (x) { return x.visible; });
+  list.forEach(function (x) { vol += partVolume(x); area += partArea(x); tri += x.triangleCount; });
+  t.appendChild(kvRow('体積', fmt(vol / 1000, 3) + ' cm³', 'sec'));
+  t.appendChild(kvRow('表面積', fmt(area / 100, 2) + ' cm²'));
+  t.appendChild(kvRow('三角形数', fmtInt(tri)));
+  if (p) {
+    var c = M4.xformPoint([0, 0, 0], p.matrix, p.mass.centroid);
+    t.appendChild(kvRow('重心', fmt(c[0], 1) + ', ' + fmt(c[1], 1) + ', ' + fmt(c[2], 1)));
+  }
+  updateMass(app);
+}
+
+function kvRow(k, v, cls) {
+  var tr = el('tr', cls ? { class: cls } : null, [el('td', { text: k }), el('td', { text: v })]);
+  return tr;
+}
+
+function updateMass(app) {
+  var p = selectedPart(app);
+  var list = p ? [p] : app.parts.filter(function (x) { return x.visible; });
+  var vol = 0;
+  list.forEach(function (x) { vol += partVolume(x); });
+  var mat = MATERIALS[parseInt($('#sel-material').value, 10) || 0];
+  var infill = clamp(parseFloat($('#in-infill').value) || 100, 1, 100) / 100;
+  var grams = vol / 1000 * mat.density * infill;
+  $('#mass-out').textContent = fmt(grams, 1) + ' g (' + fmt(vol / 1000 * infill, 2) + ' cm³)';
+}
+
+function refreshQuality(app) {
+  var t = $('#tbl-quality');
+  t.innerHTML = '';
+  var p = selectedPart(app);
+  if (!p) {
+    t.appendChild(kvRow('-', 'パーツを選択してください'));
+    return;
+  }
+  var q = p.topology;
+  t.appendChild(kvRow('形式', p.format + ' / ' + fmtBytes(p.fileSize || 0)));
+  t.appendChild(kvRow('三角形数', fmtInt(p.triangleCount)));
+  t.appendChild(kvRow('頂点数 (統合後)', fmtInt(p.vertexCount)));
+  if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
+  t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
+  t.appendChild(kvRow('水密性', q.watertight ? '閉じている' : '開いている', q.watertight ? 'ok' : 'warn'));
+  t.appendChild(kvRow('境界エッジ', fmtInt(q.boundaryEdges), q.boundaryEdges ? 'warn' : ''));
+  t.appendChild(kvRow('非多様体エッジ', fmtInt(q.nonManifoldEdges), q.nonManifoldEdges ? 'warn' : ''));
+  t.appendChild(kvRow('向き不整合エッジ', fmtInt(q.inconsistentEdges), q.inconsistentEdges ? 'warn' : ''));
+  t.appendChild(kvRow('縮退三角形', fmtInt(q.degenerateTriangles), q.degenerateTriangles ? 'warn' : ''));
+  if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
+}
+
+function refreshWarnings(app) {
+  var host = $('#warnings');
+  var msgs = [];
+  var bed = app.bed;
+  app.parts.forEach(function (p) {
+    if (!p.visible) return;
+    var b = p.worldBounds;
+    if (outsideBedXY(b, bed, app.bedShape)) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ステージ範囲外</span>');
+    }
+    if (b.max[2] > bed[2] + 0.01) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': 造形高さ超過 (' + fmt(b.max[2], 1) + ' mm)</span>');
+    }
+    if (b.min[2] < -0.01) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': プレート下に沈み込み (' + fmt(b.min[2], 2) + ' mm)</span>');
+    }
+    if (p.topology && !p.topology.watertight) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': メッシュが閉じていません</span>');
+    }
+    var thin = Math.min(b.size[0], b.size[1], b.size[2]);
+    if (thin < 0.8) {
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': 最小外形が ' + fmt(thin, 2) + ' mm (薄すぎる可能性)</span>');
+    }
+  });
+  if (app.collisionResult) {
+    app.collisionResult.forEach(function (c) {
+      if (c.intersect) msgs.push('<span class="w">干渉: ' + escapeHtml(c.a.name) + ' ↔ ' + escapeHtml(c.b.name) + '</span>');
+    });
+  }
+  host.innerHTML = msgs.length ? msgs.join('<br>') : (app.parts.length ? '<span class="g">問題は検出されていません</span>' : '-');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+  });
+}
+
+function refreshTransformInputs(app) {
+  var p = selectedPart(app);
+  if (!p) return;
+  var e = Quat.toEulerDeg(p.quat);
+  $('#in-eul-x').value = fmt(e[0], 1);
+  $('#in-eul-y').value = fmt(e[1], 1);
+  $('#in-eul-z').value = fmt(e[2], 1);
+  $('#in-pos-x').value = fmt((p.worldBounds.min[0] + p.worldBounds.max[0]) / 2, 1);
+  $('#in-pos-y').value = fmt((p.worldBounds.min[1] + p.worldBounds.max[1]) / 2, 1);
+  $('#in-scale').value = fmt(p.scale[0] * 100, 2);
+}
+
+function fitView(app) {
+  var b = sceneBounds(app.parts, true);
+  if (!b) {
+    b = { min: [0, 0, 0], max: [app.bed[0], app.bed[1], app.bed[2]], size: app.bed.slice() };
+  }
+  var center = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+  var h = Math.max(b.size[0], b.size[1], b.size[2]) * 1.6 + 10;
+  app.orthoCam.center = center.slice();
+  app.orthoCam.height = h;
+  app.orbitCam.center = center.slice();
+  app.orbitCam.height = h;
+  requestRender(app);
+}
+
+// ---------------------------------------------------------------------------
+// キャンバス操作
+// ---------------------------------------------------------------------------
+
+function viewportAt(app, cssX, cssY) {
+  var dpr = app.R.dpr;
+  var W = app.R.canvas.width, H = app.R.canvas.height;
+  var px = cssX * dpr, py = cssY * dpr;
+  var vps = computeViewports(app, W, H);
+  for (var i = 0; i < vps.length; i++) {
+    var r = vps[i].rect;
+    var top = H - r.y - r.h;
+    if (px >= r.x && px < r.x + r.w && py >= top && py < top + r.h) return vps[i];
+  }
+  return vps[0];
+}
+
+function setupCanvasInteraction(app) {
+  var canvas = app.R.canvas;
+  var drag = null;
+  var pointers = new Map();
+  var pinch = null;
+
+  canvas.addEventListener('pointerdown', function (ev) {
+    canvas.setPointerCapture(ev.pointerId);
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
+      drag = null;
+      return;
+    }
+    var rect = canvas.getBoundingClientRect();
+    var vp = viewportAt(app, ev.clientX - rect.left, ev.clientY - rect.top);
+    var pan = ev.button === 1 || ev.button === 2 || ev.shiftKey || vp.kind === 'ortho';
+    drag = { vp: vp, x: ev.clientX, y: ev.clientY, moved: 0, pan: pan, startX: ev.clientX, startY: ev.clientY };
+  });
+
+  canvas.addEventListener('pointermove', function (ev) {
+    if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch && pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinch.dist > 0) {
+        var f = pinch.dist / Math.max(1, d);
+        app.orthoCam.height = clamp(app.orthoCam.height * f, 1, 100000);
+        app.orbitCam.height = clamp(app.orbitCam.height * f, 1, 100000);
+        requestRender(app);
+      }
+      pinch.dist = d;
+      return;
+    }
+    if (!drag) return;
+    var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    drag.x = ev.clientX; drag.y = ev.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    var cam = drag.vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+    if (!drag.pan && drag.vp.kind === 'orbit') {
+      app.orbitCam.yaw -= dx * 0.008;
+      app.orbitCam.pitch = clamp(app.orbitCam.pitch + dy * 0.008, -1.553, 1.553);
+    } else {
+      var rectH = drag.vp.rect.h / app.R.dpr;
+      var worldPerPx = cam.height / Math.max(1, rectH);
+      if (drag.vp.kind === 'ortho') {
+        var d2 = VIEW_DIRS[drag.vp.key];
+        cam.center[d2.hAxis] -= dx * worldPerPx * d2.hSign;
+        cam.center[d2.vAxis] += dy * worldPerPx * d2.vSign;
+      } else {
+        var ax = orbitAxes(cam);
+        for (var k = 0; k < 3; k++) {
+          cam.center[k] -= ax.right[k] * dx * worldPerPx;
+          cam.center[k] += ax.up[k] * dy * worldPerPx;
+        }
+      }
+    }
+    requestRender(app);
+  });
+
+  function endPointer(ev) {
+    pointers.delete(ev.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (!drag) return;
+    if (drag.moved < 5) handleClick(app, ev);
+    drag = null;
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+
+  canvas.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    var vp = viewportAt(app, ev.clientX - rect.left, ev.clientY - rect.top);
+    var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+    var factor = Math.exp(clamp(ev.deltaY, -120, 120) * 0.0016);
+    var before = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
+    cam.height = clamp(cam.height * factor, 0.5, 200000);
+    var after = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
+    if (before && after) {
+      for (var k = 0; k < 3; k++) cam.center[k] += before[k] - after[k];
+    }
+    requestRender(app);
+  }, { passive: false });
+
+  // ダブルクリックで注視点を移動
+  canvas.addEventListener('dblclick', function (ev) {
+    var hit = pickAt(app, ev);
+    if (hit) {
+      app.orbitCam.center = hit.point.slice();
+      app.orthoCam.center = hit.point.slice();
+      requestRender(app);
+    }
+  });
+}
+
+// カーソル位置のワールド座標 (注視点を通る視線直交平面との交点)
+function pointOnFocalPlane(app, vp, cssX, cssY) {
+  if (!app.lastViewports) return null;
+  var entry = null;
+  for (var i = 0; i < app.lastViewports.length; i++) {
+    if (app.lastViewports[i].vp.key === vp.key) entry = app.lastViewports[i];
+  }
+  if (!entry) return null;
+  var dpr = app.R.dpr, H = app.R.canvas.height;
+  var ray = screenToRay(entry.mats, entry.vp.rect, H, cssX * dpr, cssY * dpr);
+  if (!ray) return null;
+  var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+  var n;
+  if (vp.kind === 'ortho') n = VIEW_DIRS[vp.key].dir;
+  else n = V3.scale([0, 0, 0], orbitAxes(cam).fwd, -1);
+  var denom = V3.dot(n, ray.dir);
+  if (Math.abs(denom) < 1e-9) return null;
+  var t = V3.dot(n, V3.sub([0, 0, 0], cam.center, ray.origin)) / denom;
+  return [ray.origin[0] + ray.dir[0] * t, ray.origin[1] + ray.dir[1] * t, ray.origin[2] + ray.dir[2] * t];
+}
+
+function pickAt(app, ev) {
+  if (!app.lastViewports) return null;
+  var rect = app.R.canvas.getBoundingClientRect();
+  var cssX = ev.clientX - rect.left, cssY = ev.clientY - rect.top;
+  var vp = viewportAt(app, cssX, cssY);
+  var entry = null;
+  for (var i = 0; i < app.lastViewports.length; i++) {
+    if (app.lastViewports[i].vp.key === vp.key) entry = app.lastViewports[i];
+  }
+  if (!entry) return null;
+  var dpr = app.R.dpr, H = app.R.canvas.height;
+  var ray = screenToRay(entry.mats, entry.vp.rect, H, cssX * dpr, cssY * dpr);
+  if (!ray) return null;
+  var best = null, bestD = Infinity;
+  for (i = 0; i < app.parts.length; i++) {
+    var p = app.parts[i];
+    if (!p.visible) continue;
+    var inv = M4.invert(M4.create(), p.matrix);
+    if (!inv) continue;
+    var o = M4.xformPoint([0, 0, 0], inv, ray.origin);
+    var d = M4.xformDir([0, 0, 0], inv, ray.dir);
+    var hit = raycastBVH(ensureBVH(p), p.positions, o, d);
+    if (!hit) continue;
+    var wp = M4.xformPoint([0, 0, 0], p.matrix, hit.point);
+    var dist = V3.dist(wp, ray.origin);
+    if (dist < bestD) {
+      bestD = dist;
+      best = { part: p, triangle: hit.triangle, point: wp, localPoint: hit.point };
+    }
+  }
+  return best;
+}
+
+function handleClick(app, ev) {
+  var hit = pickAt(app, ev);
+  if (app.mode === 'lay') {
+    if (hit) {
+      layFaceOnBed(hit.part, hit.triangle);
+      setMode(app, null);
+      setStatus(app, '選択した面をビルドプレートに接地しました。');
+      refreshAll(app);
+    }
+    return;
+  }
+  if (app.mode === 'measure') {
+    if (hit) {
+      var pt = snapToVertex(hit);
+      app.measure.points.push(pt);
+      if (app.measure.points.length > 2) app.measure.points = [pt];
+      updateMeasureTable(app);
+      requestRender(app);
+    }
+    return;
+  }
+  app.selection = hit ? hit.part.id : null;
+  refreshAll(app);
+}
+
+// クリック点が三角形の頂点に近ければ頂点へスナップする
+function snapToVertex(hit) {
+  var p = hit.part, t = hit.triangle * 9;
+  var verts = [];
+  for (var k = 0; k < 3; k++) {
+    verts.push(M4.xformPoint([0, 0, 0], p.matrix,
+      [p.positions[t + k * 3], p.positions[t + k * 3 + 1], p.positions[t + k * 3 + 2]]));
+  }
+  var edge = Math.min(V3.dist(verts[0], verts[1]), V3.dist(verts[1], verts[2]), V3.dist(verts[2], verts[0]));
+  var best = null, bd = Infinity;
+  for (k = 0; k < 3; k++) {
+    var d = V3.dist(verts[k], hit.point);
+    if (d < bd) { bd = d; best = verts[k]; }
+  }
+  return (bd < edge * 0.25) ? best : hit.point;
+}
+
+function updateMeasureTable(app) {
+  var t = $('#tbl-measure');
+  t.innerHTML = '';
+  var pts = app.measure.points;
+  if (pts.length === 0) { t.appendChild(kvRow('-', 'モデル上を 2 点クリック')); return; }
+  t.appendChild(kvRow('P1', pts[0].map(function (v) { return fmt(v, 2); }).join(', ')));
+  if (pts.length < 2) { t.appendChild(kvRow('P2', '未指定')); return; }
+  t.appendChild(kvRow('P2', pts[1].map(function (v) { return fmt(v, 2); }).join(', ')));
+  var d = V3.sub([0, 0, 0], pts[1], pts[0]);
+  t.appendChild(kvRow('ΔX / ΔY / ΔZ', fmt(Math.abs(d[0]), 2) + ' / ' + fmt(Math.abs(d[1]), 2) + ' / ' + fmt(Math.abs(d[2]), 2), 'sec'));
+  t.appendChild(kvRow('距離', fmt(V3.len(d), 3) + ' mm'));
+}
+
+function setMode(app, mode) {
+  app.mode = mode;
+  var hint = $('#mode-hint');
+  if (!mode) { hint.hidden = true; }
+  else {
+    hint.hidden = false;
+    hint.textContent = mode === 'lay' ? 'ベッドに接地させる面をクリック (Esc で中止)' : '計測する 2 点をクリック (Esc で終了)';
+  }
+  $('#btn-measure').textContent = mode === 'measure' ? '計測を終了' : '計測を開始';
+}
+
+// ===== 95_controls.js =====
+// ---------------------------------------------------------------------------
+// パネル操作の配線
+// ---------------------------------------------------------------------------
+
+function setupControls(app) {
+  var i;
+
+  // --- ファイル ---
+  $('#btn-open').addEventListener('click', function () { $('#file-input').click(); });
+  $('#file-input').addEventListener('change', function (ev) {
+    loadFiles(app, ev.target.files);
+    ev.target.value = '';
+  });
+  var vpEl = $('#viewport');
+  ['dragenter', 'dragover'].forEach(function (t) {
+    document.addEventListener(t, function (ev) { ev.preventDefault(); vpEl.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    document.addEventListener(t, function (ev) {
+      ev.preventDefault();
+      if (t === 'drop' || ev.target === document.documentElement) vpEl.classList.remove('dragover');
+    });
+  });
+  document.addEventListener('drop', function (ev) {
+    if (ev.dataTransfer && ev.dataTransfer.files.length) loadFiles(app, ev.dataTransfer.files);
+  });
+
+  // --- レイアウト / 視点 ---
+  function setLayout(mode) {
+    app.layout = mode;
+    $('#btn-layout-single').classList.toggle('active', mode === 'single');
+    $('#btn-layout-quad').classList.toggle('active', mode === 'quad');
+    $('#view-preset-group').style.opacity = mode === 'quad' ? 0.4 : 1;
+    requestRender(app);
+  }
+  $('#btn-layout-single').addEventListener('click', function () { setLayout('single'); });
+  $('#btn-layout-quad').addEventListener('click', function () { setLayout('quad'); });
+  setLayout('single');
+
+  $('#sel-view').addEventListener('change', function (ev) {
+    app.singleView = ev.target.value;
+    app.layout = 'single';
+    setLayout('single');
+  });
+  $('#sel-shade').addEventListener('change', function (ev) {
+    app.shadeMode = parseInt(ev.target.value, 10);
+    requestRender(app);
+  });
+  $('#btn-fit').addEventListener('click', function () { fitView(app); });
+  $('#btn-png').addEventListener('click', function () { exportPNG(app); });
+  $('#btn-export').addEventListener('click', function () { exportSTL(app); });
+  $('#btn-report').addEventListener('click', function () { exportReport(app); });
+
+  // --- タブ ---
+  $$('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      $$('.tab').forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      $$('.tabpanel').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== tab.getAttribute('data-tab'); });
+    });
+  });
+
+  // --- 計測タブ ---
+  var mSel = $('#sel-material');
+  MATERIALS.forEach(function (m, idx) {
+    mSel.appendChild(el('option', { value: idx, text: m.name + ' (' + m.density + ' g/cm³)' }));
+  });
+  mSel.addEventListener('change', function () { updateMass(app); });
+  $('#in-infill').addEventListener('input', function () { updateMass(app); });
+
+  $('#btn-scale-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var s = (parseFloat($('#in-scale').value) || 100) / 100;
+    applyScale(app, p, [s, s, s]);
+  });
+  $('#btn-inch').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    applyScale(app, p, [p.scale[0] * 25.4, p.scale[1] * 25.4, p.scale[2] * 25.4]);
+  });
+  $('#btn-scale-reset').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    applyScale(app, p, [1, 1, 1]);
+  });
+  $('#btn-fit-size').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var axis = parseInt($('#sel-fit-axis').value, 10);
+    var target = parseFloat($('#in-fit-size').value);
+    if (!target || target <= 0) return;
+    var cur = p.worldBounds.size[axis];
+    if (cur < 1e-9) return;
+    var f = target / cur;
+    applyScale(app, p, [p.scale[0] * f, p.scale[1] * f, p.scale[2] * f]);
+  });
+
+  $('#btn-measure').addEventListener('click', function () {
+    setMode(app, app.mode === 'measure' ? null : 'measure');
+    if (app.mode !== 'measure') { /* 終了時は結果を残す */ }
+  });
+  $('#btn-measure-clear').addEventListener('click', function () {
+    app.measure.points = [];
+    updateMeasureTable(app);
+    requestRender(app);
+  });
+  updateMeasureTable(app);
+
+  // --- 表示タブ ---
+  $('#in-overhang').addEventListener('input', function (ev) {
+    app.overhangDeg = parseFloat(ev.target.value);
+    $('#overhang-val').textContent = app.overhangDeg + '°';
+    requestRender(app);
+  });
+  $('#btn-overhang-calc').addEventListener('click', function () {
+    withBusy(app, '面積を集計中...', function () { computeOverhangTable(app); });
+  });
+  function bindCheck(id, key, after) {
+    $(id).addEventListener('change', function (ev) {
+      app[key] = ev.target.checked;
+      if (after) after();
+      requestRender(app);
+    });
+  }
+  bindCheck('#chk-bed', 'showBed');
+  bindCheck('#chk-dims', 'showDims');
+  bindCheck('#chk-bbox', 'showBBox');
+  bindCheck('#chk-ghost', 'ghostOthers');
+  bindCheck('#chk-xray', 'xray');
+  $('#chk-persp').addEventListener('change', function (ev) {
+    app.orbitCam.persp = ev.target.checked;
+    requestRender(app);
+  });
+
+  // --- ステージ (造形エリア) ---
+  var pSel = $('#sel-printer');
+  pSel.appendChild(el('option', { value: '-1', text: 'プリセット' }));
+  PRINTERS.forEach(function (pr, idx) { pSel.appendChild(el('option', { value: idx, text: pr.name })); });
+  pSel.addEventListener('change', function (ev) {
+    var idx = parseInt(ev.target.value, 10);
+    if (idx < 0) return;
+    var pr = PRINTERS[idx];
+    app.bedShape = pr.shape || 'rect';
+    app.bed = pr.bed.slice();
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  $('#sel-bed-shape').addEventListener('change', function () {
+    app.bedShape = $('#sel-bed-shape').value;
+    syncBedInputs(app);
+    readBedInputs(app);
+    applyBedChange(app);
+  });
+  ['#in-bed-x', '#in-bed-y', '#in-bed-z', '#in-bed-d', '#in-grid-step'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      readBedInputs(app);
+      applyBedChange(app);
+    });
+  });
+  $('#btn-bed-fit').addEventListener('click', function () {
+    var b = sceneBounds(app.parts, true);
+    if (!b) { setStatus(app, 'パーツがありません。'); return; }
+    var margin = parseFloat($('#in-margin').value) || 5;
+    if (app.bedShape === 'circle') {
+      var cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+      var r = 0;
+      for (var i = 0; i < 4; i++) {
+        var x = (i & 1) ? b.max[0] : b.min[0], y = (i & 2) ? b.max[1] : b.min[1];
+        r = Math.max(r, Math.hypot(x - cx, y - cy));
+      }
+      var d = Math.ceil((r + margin) * 2);
+      app.bed = [d, d, Math.max(1, Math.ceil(b.max[2] + margin))];
+    } else {
+      app.bed = [
+        Math.max(1, Math.ceil(b.size[0] + margin * 2)),
+        Math.max(1, Math.ceil(b.size[1] + margin * 2)),
+        Math.max(1, Math.ceil(b.max[2] + margin))
+      ];
+    }
+    syncBedInputs(app);
+    applyBedChange(app);
+    // モデルをステージ中央へ寄せる
+    app.parts.forEach(function (p) { if (p.visible) centerPartOnBed(p, app.bed); });
+    if (app.parts.filter(function (p) { return p.visible; }).length > 1) {
+      arrangeParts(app.parts, app.bed, parseFloat($('#in-margin').value) || 5);
+    }
+    fitView(app);
+    refreshAll(app);
+  });
+  $('#btn-bed-reset').addEventListener('click', function () {
+    app.bedShape = 'rect';
+    app.bed = [220, 220, 250];
+    app.gridStep = 10;
+    syncBedInputs(app);
+    applyBedChange(app);
+  });
+  applyBedFromURL(app);
+  syncBedInputs(app);
+
+  // --- 断面タブ ---
+  buildClipControls(app);
+  $('#chk-cap').addEventListener('change', function (ev) {
+    app.clips.forEach(function (c) { c.cap = ev.target.checked; });
+    requestRender(app);
+  });
+  $('#btn-slice').addEventListener('click', function () {
+    withBusy(app, '断面を計算中...', function () { computeSlice(app); });
+  });
+  $('#btn-slice-prev').addEventListener('click', function () { stepSlice(app, -1); });
+  $('#btn-slice-next').addEventListener('click', function () { stepSlice(app, 1); });
+
+  // --- 向きタブ ---
+  $$('[data-rot]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var spec = btn.getAttribute('data-rot').split(',');
+      var axis = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[spec[0]];
+      rotateSelected(app, axis, parseFloat(spec[1]));
+    });
+  });
+  $('#btn-rot-apply').addEventListener('click', function () {
+    var axisIdx = parseInt($('#sel-rot-axis').value, 10);
+    var axis = [[1, 0, 0], [0, 1, 0], [0, 0, 1]][axisIdx];
+    rotateSelected(app, axis, parseFloat($('#in-rot-angle').value) || 0);
+  });
+  $('#btn-eul-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    p.quat = Quat.fromEulerDeg([
+      parseFloat($('#in-eul-x').value) || 0,
+      parseFloat($('#in-eul-y').value) || 0,
+      parseFloat($('#in-eul-z').value) || 0
+    ]);
+    updatePartMatrix(p);
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-lay').addEventListener('click', function () {
+    if (!selectedPart(app)) { setStatus(app, 'パーツを選択してください。'); return; }
+    setMode(app, app.mode === 'lay' ? null : 'lay');
+  });
+  $('#btn-drop').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-rot-reset').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    p.quat = [0, 0, 0, 1];
+    updatePartMatrix(p);
+    dropToBed(p);
+    refreshAll(app);
+  });
+  $('#btn-auto-orient').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
+    withBusy(app, '姿勢を探索中...', function () { runAutoOrient(app, p); });
+  });
+
+  // --- 配置タブ ---
+  $('#btn-pos-apply').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var cx = (p.worldBounds.min[0] + p.worldBounds.max[0]) / 2;
+    var cy = (p.worldBounds.min[1] + p.worldBounds.max[1]) / 2;
+    p.pos[0] += (parseFloat($('#in-pos-x').value) || 0) - cx;
+    p.pos[1] += (parseFloat($('#in-pos-y').value) || 0) - cy;
+    updatePartMatrix(p);
+    refreshAll(app);
+  });
+  $('#btn-center').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    centerPartOnBed(p, app.bed);
+    refreshAll(app);
+  });
+  $('#btn-arrange').addEventListener('click', function () {
+    app.margin = parseFloat($('#in-margin').value) || 5;
+    arrangeParts(app.parts, app.bed, app.margin);
+    refreshAll(app);
+  });
+  $('#btn-duplicate').addEventListener('click', function () {
+    var p = selectedPart(app);
+    if (!p) return;
+    var copy = createPart(p.name + ' (複製)', p.positions.slice(), p.fileSize, p.format);
+    copy.scale = p.scale.slice();
+    copy.quat = p.quat.slice();
+    copy.pos = [p.pos[0] + 10, p.pos[1] + 10, p.pos[2]];
+    updatePartMatrix(copy);
+    app.parts.push(copy);
+    app.selection = copy.id;
+    refreshAll(app);
+  });
+  $('#btn-delete').addEventListener('click', function () { deleteSelected(app); });
+  $('#btn-clear').addEventListener('click', function () {
+    app.parts.forEach(function (p) { disposePartGPU(app.R, p); });
+    app.parts = [];
+    app.selection = null;
+    app.collisionResult = null;
+    app.contourLines = null;
+    refreshAll(app);
+    setStatus(app, 'すべてのパーツを削除しました。');
+  });
+  $('#btn-collide').addEventListener('click', function () {
+    withBusy(app, '干渉を判定中...', function () { runCollisionCheck(app); });
+  });
+
+  // --- キーボード ---
+  window.addEventListener('keydown', function (ev) {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
+    if (ev.key === 'Escape') { setMode(app, null); }
+    else if (ev.key === 'Delete' || ev.key === 'Backspace') { deleteSelected(app); }
+    else if (ev.key === 'f' || ev.key === 'F') { fitView(app); }
+    else if (ev.key === 'q' || ev.key === 'Q') {
+      $(app.layout === 'quad' ? '#btn-layout-single' : '#btn-layout-quad').click();
+    } else if (/^[1-6]$/.test(ev.key)) {
+      var keys = ['iso', 'front', 'right', 'top', 'left', 'back'];
+      $('#sel-view').value = keys[parseInt(ev.key, 10) - 1];
+      $('#sel-view').dispatchEvent(new Event('change'));
+    }
+  });
+
+  window.addEventListener('resize', function () { requestRender(app); });
+}
+
+function deleteSelected(app) {
+  var p = selectedPart(app);
+  if (!p) return;
+  disposePartGPU(app.R, p);
+  app.parts = app.parts.filter(function (x) { return x !== p; });
+  app.selection = app.parts.length ? app.parts[0].id : null;
+  app.collisionResult = null;
+  refreshAll(app);
+}
+
+function applyScale(app, part, scale) {
+  part.scale = scale;
+  updatePartMatrix(part);
+  dropToBed(part);
+  refreshAll(app);
+  setStatus(app, '倍率を ' + fmt(scale[0] * 100, 2) + ' % に設定しました。');
+}
+
+function rotateSelected(app, axis, deg) {
+  var p = selectedPart(app);
+  if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
+  rotatePartAroundCenter(p, Quat.fromAxisAngle(axis, deg * Math.PI / 180));
+  refreshAll(app);
+}
+
+// ---------------------------------------------------------------------------
+// オーバーハング集計
+// ---------------------------------------------------------------------------
+
+function computeOverhangTable(app) {
+  var t = $('#tbl-overhang');
+  t.innerHTML = '';
+  var list = app.parts.filter(function (p) { return p.visible; });
+  if (!list.length) { t.appendChild(kvRow('-', 'パーツがありません')); return; }
+  var total = 0, over = 0, contact = 0, sampled = false;
+  list.forEach(function (p) {
+    var step = Math.max(1, Math.ceil(p.triangleCount / 300000));
+    var s = overhangStats(p.positions, p.matrix, app.overhangDeg, 0, 0.05, step);
+    total += s.totalArea; over += s.overhangArea; contact += s.contactArea;
+    if (s.sampled) sampled = true;
+  });
+  t.appendChild(kvRow('しきい値', app.overhangDeg + '° 超で要サポート'));
+  t.appendChild(kvRow('要サポート面積', fmt(over / 100, 2) + ' cm²', over > 0 ? 'warn' : 'ok'));
+  t.appendChild(kvRow('全表面積比', fmt(total > 0 ? over / total * 100 : 0, 1) + ' %'));
+  t.appendChild(kvRow('ベッド接地面積', fmt(contact / 100, 2) + ' cm²', contact > 0 ? 'ok' : 'warn'));
+  if (sampled) t.appendChild(kvRow('注記', '三角形を間引いた概算値'));
+}
+
+// ---------------------------------------------------------------------------
+// クリップ平面
+// ---------------------------------------------------------------------------
+
+function buildClipControls(app) {
+  var host = $('#clip-controls');
+  host.innerHTML = '';
+  var names = ['X', 'Y', 'Z'];
+  app.clips.forEach(function (clip, idx) {
+    var chk = el('input', { type: 'checkbox' });
+    var range = el('input', { type: 'range', min: 0, max: 100, step: 0.1, value: clip.value });
+    var num = el('input', { type: 'number', step: 0.5, value: clip.value, style: 'width:74px' });
+    var invBtn = el('button', { class: 'btn sm', text: '反転' });
+    chk.addEventListener('change', function () {
+      clip.enabled = chk.checked;
+      requestRender(app);
+    });
+    function setValue(v) {
+      clip.value = v;
+      range.value = v;
+      num.value = fmt(v, 2);
+      if (clip.enabled) requestRender(app);
+    }
+    range.addEventListener('input', function () { setValue(parseFloat(range.value)); });
+    num.addEventListener('change', function () { setValue(parseFloat(num.value) || 0); });
+    invBtn.addEventListener('click', function () {
+      clip.invert = !clip.invert;
+      invBtn.classList.toggle('active', clip.invert);
+      requestRender(app);
+    });
+    clip.ui = { range: range, num: num, chk: chk };
+    host.appendChild(el('div', { class: 'row' }, [
+      el('label', {}, [chk, document.createTextNode(' ' + names[idx] + ' 平面')]),
+      range, num, invBtn
+    ]));
+  });
+  updateClipRanges(app);
+}
+
+function updateClipRanges(app) {
+  var b = sceneBounds(app.parts, true);
+  if (!b) b = { min: [0, 0, 0], max: app.bed.slice() };
+  app.clips.forEach(function (clip, idx) {
+    if (!clip.ui) return;
+    var lo = b.min[idx], hi = b.max[idx];
+    if (hi - lo < 1e-6) { hi = lo + 1; }
+    clip.ui.range.min = lo;
+    clip.ui.range.max = hi;
+    clip.ui.range.step = Math.max((hi - lo) / 500, 0.01);
+    if (clip.value < lo || clip.value > hi) {
+      clip.value = (lo + hi) / 2;
+      clip.ui.range.value = clip.value;
+      clip.ui.num.value = fmt(clip.value, 2);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 断面輪郭
+// ---------------------------------------------------------------------------
+
+function computeSlice(app) {
+  var axis = parseInt($('#sel-slice-axis').value, 10);
+  var value = parseFloat($('#in-slice-pos').value) || 0;
+  var Rm = sliceRotation(axis);
+  var invR = M4.invert(M4.create(), Rm);
+  var loops = [];
+  app.parts.forEach(function (p) {
+    if (!p.visible) return;
+    var m = M4.mul(M4.create(), Rm, p.matrix);
+    var ls = sliceAtZ(p.positions, m, value);
+    ls.forEach(function (l) { loops.push(l); });
+  });
+  app.slice = { axis: axis, value: value, loops: loops };
+  // 3D 表示用の輪郭線
+  var lines = [];
+  loops.forEach(function (l) {
+    var pts = l.points;
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var a = M4.xformPoint([0, 0, 0], invR, [pts[i][0], pts[i][1], value]);
+      var b = M4.xformPoint([0, 0, 0], invR, [pts[i + 1][0], pts[i + 1][1], value]);
+      lines.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    }
+    if (l.closed && pts.length > 2) {
+      var a2 = M4.xformPoint([0, 0, 0], invR, [pts[pts.length - 1][0], pts[pts.length - 1][1], value]);
+      var b2 = M4.xformPoint([0, 0, 0], invR, [pts[0][0], pts[0][1], value]);
+      lines.push(a2[0], a2[1], a2[2], b2[0], b2[1], b2[2]);
+    }
+  });
+  app.contourLines = lines;
+  drawSliceCanvas(app);
+  updateSliceTable(app);
+  requestRender(app);
+}
+
+function stepSlice(app, dir) {
+  var step = parseFloat($('#in-slice-step').value) || 0.2;
+  var pos = (parseFloat($('#in-slice-pos').value) || 0) + dir * step;
+  $('#in-slice-pos').value = fmt(pos, 3);
+  computeSlice(app);
+}
+
+function pointInPolygon(pt, poly) {
+  var inside = false;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / ((yj - yi) || 1e-20) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function sliceMetrics(loops) {
+  var closed = loops.filter(function (l) { return l.closed && l.points.length > 2; });
+  var open = loops.length - closed.length;
+  var perimeter = 0;
+  loops.forEach(function (l) { perimeter += polylineLength(l.points, l.closed); });
+  var area = 0;
+  if (closed.length <= 300) {
+    closed.forEach(function (l, idx) {
+      var depth = 0;
+      for (var k = 0; k < closed.length; k++) {
+        if (k === idx) continue;
+        if (pointInPolygon(l.points[0], closed[k].points)) depth++;
+      }
+      var a = Math.abs(polygonArea(l.points));
+      area += (depth % 2 === 0) ? a : -a;
+    });
+  } else {
+    closed.forEach(function (l) { area += polygonArea(l.points); });
+    area = Math.abs(area);
+  }
+  return { closed: closed.length, open: open, perimeter: perimeter, area: area };
+}
+
+function updateSliceTable(app) {
+  var t = $('#tbl-slice');
+  t.innerHTML = '';
+  if (!app.slice) { t.appendChild(kvRow('-', '未計算')); return; }
+  var m = sliceMetrics(app.slice.loops);
+  var axisName = ['X', 'Y', 'Z'][app.slice.axis];
+  t.appendChild(kvRow('切断位置', axisName + ' = ' + fmt(app.slice.value, 3) + ' mm'));
+  t.appendChild(kvRow('断面積', fmt(m.area, 2) + ' mm²'));
+  t.appendChild(kvRow('輪郭長', fmt(m.perimeter, 2) + ' mm'));
+  t.appendChild(kvRow('閉ループ数', fmtInt(m.closed)));
+  t.appendChild(kvRow('開ループ数', fmtInt(m.open), m.open ? 'warn' : ''));
+  if (m.open) t.appendChild(kvRow('注記', 'メッシュの穴により輪郭が閉じません'));
+}
+
+function drawSliceCanvas(app) {
+  var cv = $('#slice-canvas');
+  var ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#101317';
+  ctx.fillRect(0, 0, W, H);
+  if (!app.slice || !app.slice.loops.length) {
+    ctx.fillStyle = '#9aa1ad';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('この位置に断面はありません', 12, 20);
+    return;
+  }
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  app.slice.loops.forEach(function (l) {
+    l.points.forEach(function (p) {
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+    });
+  });
+  var pad = 16;
+  var sx = (W - pad * 2) / Math.max(maxX - minX, 1e-6);
+  var sy = (H - pad * 2) / Math.max(maxY - minY, 1e-6);
+  var s = Math.min(sx, sy);
+  var ox = pad + ((W - pad * 2) - (maxX - minX) * s) / 2;
+  var oy = pad + ((H - pad * 2) - (maxY - minY) * s) / 2;
+  function tx(p) { return [ox + (p[0] - minX) * s, H - (oy + (p[1] - minY) * s)]; }
+
+  var path = new Path2D();
+  app.slice.loops.forEach(function (l) {
+    if (!l.closed || l.points.length < 3) return;
+    var p0 = tx(l.points[0]);
+    path.moveTo(p0[0], p0[1]);
+    for (var i = 1; i < l.points.length; i++) {
+      var p = tx(l.points[i]);
+      path.lineTo(p[0], p[1]);
+    }
+    path.closePath();
+  });
+  ctx.fillStyle = 'rgba(79,157,224,0.35)';
+  ctx.fill(path, 'evenodd');
+  ctx.strokeStyle = '#7fd6ff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke(path);
+
+  // 開いた輪郭は警告色で描く
+  ctx.strokeStyle = '#e05f4f';
+  app.slice.loops.forEach(function (l) {
+    if (l.closed) return;
+    ctx.beginPath();
+    var p0 = tx(l.points[0]);
+    ctx.moveTo(p0[0], p0[1]);
+    for (var i = 1; i < l.points.length; i++) {
+      var p = tx(l.points[i]);
+      ctx.lineTo(p[0], p[1]);
+    }
+    ctx.stroke();
+  });
+
+  // スケールバー
+  var axisName = ['X', 'Y', 'Z'][app.slice.axis];
+  ctx.fillStyle = '#9aa1ad';
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillText(axisName + ' = ' + fmt(app.slice.value, 2) + ' mm', 8, 14);
+  ctx.fillText(fmt(maxX - minX, 1) + ' x ' + fmt(maxY - minY, 1) + ' mm', 8, H - 8);
+}
+
+// ---------------------------------------------------------------------------
+// 自動姿勢探索
+// ---------------------------------------------------------------------------
+
+function runAutoOrient(app, part) {
+  var results = searchOrientations(part, app.overhangDeg, 18);
+  var t = $('#tbl-orient');
+  t.innerHTML = '';
+  var head = el('tr', { class: 'sec' }, [
+    el('td', { text: '候補 (高さ / 要サポート)' }), el('td', { text: '接地' })
+  ]);
+  t.appendChild(head);
+  results.slice(0, 6).forEach(function (r, idx) {
+    var tr = el('tr', { class: 'orient-row' }, [
+      el('td', { text: (idx + 1) + '. ' + fmt(r.height, 1) + ' mm / ' + fmt(r.overhangArea / 100, 2) + ' cm²' }),
+      el('td', { text: fmt(r.contactArea / 100, 2) + ' cm²' })
+    ]);
+    tr.addEventListener('click', function () {
+      part.quat = r.quat.slice();
+      updatePartMatrix(part);
+      centerPartOnBed(part, app.bed);
+      refreshAll(app);
+      setStatus(app, '候補 ' + (idx + 1) + ' の姿勢を適用しました。');
+    });
+    t.appendChild(tr);
+  });
+  setStatus(app, results.length + ' 件の姿勢を評価しました。行をクリックで適用します。');
+}
+
+// ---------------------------------------------------------------------------
+// 干渉チェック
+// ---------------------------------------------------------------------------
+
+function runCollisionCheck(app) {
+  var t = $('#tbl-collide');
+  t.innerHTML = '';
+  var res = detectCollisions(app.parts);
+  app.collisionResult = res;
+  var out = [];
+  app.parts.forEach(function (p) {
+    if (!p.visible) return;
+    var b = p.worldBounds;
+    var outside = outsideBedXY(b, app.bed, app.bedShape) || b.max[2] > app.bed[2] + 0.01;
+    if (outside) out.push(p.name);
+  });
+  var hits = res.filter(function (c) { return c.intersect; });
+  t.appendChild(kvRow('干渉ペア', fmtInt(hits.length), hits.length ? 'warn' : 'ok'));
+  hits.forEach(function (c) { t.appendChild(kvRow(c.a.name, '↔ ' + c.b.name, 'warn')); });
+  var undecided = res.filter(function (c) { return !c.exact && !c.intersect; });
+  if (undecided.length) t.appendChild(kvRow('判定打ち切り', fmtInt(undecided.length) + ' ペア'));
+  t.appendChild(kvRow('領域外パーツ', out.length ? out.join(', ') : 'なし', out.length ? 'warn' : 'ok'));
+  refreshWarnings(app);
+}
+
+// ---------------------------------------------------------------------------
+// 書き出し
+// ---------------------------------------------------------------------------
+
+function exportSTL(app) {
+  var p = selectedPart(app);
+  var list = p ? [p] : app.parts.filter(function (x) { return x.visible; });
+  if (!list.length) { setStatus(app, '書き出す対象がありません。'); return; }
+  var buf = buildBinarySTL(list.map(function (x) {
+    return { positions: x.positions, matrix: x.matrix };
+  }), 'stl-viewer export');
+  var name = (p ? p.name : 'scene') + '_transformed.stl';
+  saveBlob(new Blob([buf], { type: 'model/stl' }), name);
+  setStatus(app, name + ' を書き出しました (現在の位置・姿勢・倍率を反映)。');
+}
+
+function exportPNG(app) {
+  renderFrame(app);
+  app.R.canvas.toBlob(function (blob) {
+    if (!blob) { setStatus(app, 'PNG を生成できませんでした。'); return; }
+    saveBlob(blob, 'stl-view.png');
+    setStatus(app, 'PNG を保存しました。');
+  }, 'image/png');
+}
+
+function exportReport(app) {
+  var lines = [];
+  lines.push('STL Viewer 計測レポート');
+  lines.push('生成: ' + new Date().toISOString());
+  lines.push('ビルドプレート: ' + app.bed.join(' x ') + ' mm');
+  lines.push('');
+  app.parts.forEach(function (p) {
+    var b = p.worldBounds;
+    var q = p.topology || {};
+    lines.push('[' + p.name + ']');
+    lines.push('  形式            : ' + p.format + ' / ' + fmtBytes(p.fileSize || 0));
+    lines.push('  外形寸法 (mm)   : ' + fmt(b.size[0], 3) + ' x ' + fmt(b.size[1], 3) + ' x ' + fmt(b.size[2], 3));
+    lines.push('  配置範囲 X      : ' + fmt(b.min[0], 3) + ' … ' + fmt(b.max[0], 3));
+    lines.push('  配置範囲 Y      : ' + fmt(b.min[1], 3) + ' … ' + fmt(b.max[1], 3));
+    lines.push('  配置範囲 Z      : ' + fmt(b.min[2], 3) + ' … ' + fmt(b.max[2], 3));
+    lines.push('  体積            : ' + fmt(partVolume(p) / 1000, 4) + ' cm3');
+    lines.push('  表面積          : ' + fmt(partArea(p) / 100, 3) + ' cm2');
+    lines.push('  三角形数        : ' + p.triangleCount);
+    lines.push('  倍率            : ' + fmt(p.scale[0] * 100, 3) + ' %');
+    lines.push('  姿勢 XYZ (deg)  : ' + Quat.toEulerDeg(p.quat).map(function (v) { return fmt(v, 2); }).join(', '));
+    lines.push('  水密性          : ' + (q.watertight ? 'OK' : 'NG'));
+    lines.push('  境界/非多様体   : ' + (q.boundaryEdges || 0) + ' / ' + (q.nonManifoldEdges || 0));
+    lines.push('  シェル数        : ' + (q.shells || 0));
+    var s = overhangStats(p.positions, p.matrix, app.overhangDeg, 0, 0.05,
+      Math.max(1, Math.ceil(p.triangleCount / 300000)));
+    lines.push('  要サポート面積  : ' + fmt(s.overhangArea / 100, 3) + ' cm2 (しきい値 ' + app.overhangDeg + ' deg)');
+    lines.push('  接地面積        : ' + fmt(s.contactArea / 100, 3) + ' cm2');
+    lines.push('');
+  });
+  saveBlob(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), 'stl-report.txt');
+  setStatus(app, 'レポートを書き出しました。');
+}
+
+// ---------------------------------------------------------------------------
+// ステージ (造形エリア) の設定
+// ---------------------------------------------------------------------------
+
+function readBedInputs(app) {
+  var z = Math.max(1, parseFloat($('#in-bed-z').value) || 250);
+  if (app.bedShape === 'circle') {
+    var d = Math.max(1, parseFloat($('#in-bed-d').value) || 220);
+    app.bed = [d, d, z];
+  } else {
+    app.bed = [
+      Math.max(1, parseFloat($('#in-bed-x').value) || 220),
+      Math.max(1, parseFloat($('#in-bed-y').value) || 220),
+      z
+    ];
+  }
+  app.gridStep = clamp(parseFloat($('#in-grid-step').value) || 10, 0.5, 500);
+}
+
+function syncBedInputs(app) {
+  $('#sel-bed-shape').value = app.bedShape;
+  $('#row-bed-rect').hidden = app.bedShape === 'circle';
+  $('#row-bed-circle').hidden = app.bedShape !== 'circle';
+  $('#in-bed-x').value = fmt(app.bed[0], 1);
+  $('#in-bed-y').value = fmt(app.bed[1], 1);
+  $('#in-bed-d').value = fmt(app.bed[0], 1);
+  $('#in-bed-z').value = fmt(app.bed[2], 1);
+  $('#in-grid-step').value = fmt(app.gridStep, 1);
+  $('#bed-summary').textContent = app.bedShape === 'circle'
+    ? 'φ' + fmt(app.bed[0], 0) + ' × H' + fmt(app.bed[2], 0)
+    : fmt(app.bed[0], 0) + ' × ' + fmt(app.bed[1], 0) + ' × ' + fmt(app.bed[2], 0);
+}
+
+function applyBedChange(app) {
+  app.R.gridDirty = true;
+  syncBedInputs(app);
+  updateBedURL(app);
+  refreshWarnings(app);
+  updateClipRanges(app);
+  requestRender(app);
+}
+
+// ステージ設定を URL に反映する (ブックマークで再現できるようにする)
+function updateBedURL(app) {
+  try {
+    var v = app.bedShape === 'circle'
+      ? 'circle:' + fmt(app.bed[0], 1) + 'x' + fmt(app.bed[2], 1)
+      : fmt(app.bed[0], 1) + 'x' + fmt(app.bed[1], 1) + 'x' + fmt(app.bed[2], 1);
+    var url = new URL(window.location.href);
+    url.searchParams.set('bed', v);
+    if (app.gridStep !== 10) url.searchParams.set('grid', fmt(app.gridStep, 1));
+    else url.searchParams.delete('grid');
+    window.history.replaceState(null, '', url.toString());
+  } catch (e) { /* file:// などで失敗する場合は無視する */ }
+}
+
+function applyBedFromURL(app) {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var bed = params.get('bed');
+    if (bed) {
+      var circle = /^circle:/i.test(bed);
+      var nums = bed.replace(/^circle:/i, '').split(/[x,]/).map(parseFloat).filter(function (n) { return isFinite(n) && n > 0; });
+      if (circle && nums.length >= 1) {
+        app.bedShape = 'circle';
+        app.bed = [nums[0], nums[0], nums[1] || app.bed[2]];
+      } else if (nums.length >= 2) {
+        app.bedShape = 'rect';
+        app.bed = [nums[0], nums[1], nums[2] || app.bed[2]];
+      }
+    }
+    var grid = parseFloat(params.get('grid'));
+    if (isFinite(grid) && grid > 0) app.gridStep = clamp(grid, 0.5, 500);
+  } catch (e) { /* 解析できない場合は既定値のまま */ }
+}
+
+// ===== 97_print.js =====
+// ---------------------------------------------------------------------------
+// 図面タブ (実寸 PDF / SVG 出力) の配線
+// ---------------------------------------------------------------------------
+
+function setupPrintControls(app) {
+  var sel = $('#sel-paper');
+  PAPER_SIZES.forEach(function (p, idx) {
+    sel.appendChild(el('option', { value: idx, text: p.name + ' (' + p.w + ' × ' + p.h + ' mm)' }));
+  });
+  sel.value = '0';
+
+  $('#btn-print-pdf').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { exportDrawingPDF(app); });
+  });
+  $('#btn-print-svg').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { exportDrawingSVG(app); });
+  });
+  $('#btn-print-preview').addEventListener('click', function () {
+    withBusy(app, '図面を生成中...', function () { previewDrawings(app); });
+  });
+  $$('#print-views input').forEach(function (c) {
+    c.addEventListener('change', function () { updatePrintTable(app); });
+  });
+  ['#sel-paper', '#sel-paper-orient', '#in-print-margin', '#in-print-overlap', '#sel-print-scale',
+    '#chk-print-feature', '#chk-print-dims', '#sel-print-target'].forEach(function (id) {
+      $(id).addEventListener('change', function () { updatePrintTable(app); });
+    });
+  updatePrintTable(app);
+}
+
+function printOptions(app) {
+  var paper = PAPER_SIZES[parseInt($('#sel-paper').value, 10) || 0];
+  return {
+    paper: paper,
+    landscape: $('#sel-paper-orient').value === 'landscape',
+    margin: clamp(parseFloat($('#in-print-margin').value) || 0, 0, 40),
+    overlap: clamp(parseFloat($('#in-print-overlap').value) || 0, 0, 50),
+    scale: parseFloat($('#sel-print-scale').value) || 1,
+    feature: $('#chk-print-feature').checked,
+    dimensions: $('#chk-print-dims').checked,
+    grid: $('#chk-print-grid').checked,
+    gridStep: app.gridStep,
+    title: printTitle(app)
+  };
+}
+
+function printTitle(app) {
+  var p = selectedPart(app);
+  if ($('#sel-print-target').value === 'all' || !p) return 'scene';
+  return p.name;
+}
+
+function printTargets(app) {
+  var mode = $('#sel-print-target').value;
+  var p = selectedPart(app);
+  if (mode === 'selected' && p) return [p];
+  return app.parts.filter(function (x) { return x.visible; });
+}
+
+function selectedPrintViews() {
+  return $$('#print-views input').filter(function (c) { return c.checked; })
+    .map(function (c) { return c.value; });
+}
+
+// 選択された図を組み立てる
+function collectDrawings(app) {
+  var parts = printTargets(app);
+  if (!parts.length) throw new Error('対象のパーツがありません');
+  var opts = printOptions(app);
+  var keys = selectedPrintViews();
+  if (!keys.length) throw new Error('出力する図を 1 つ以上選んでください');
+  var out = [];
+  for (var i = 0; i < keys.length; i++) {
+    var d;
+    if (keys[i] === 'section') {
+      var axis = parseInt($('#sel-slice-axis').value, 10);
+      var value = parseFloat($('#in-slice-pos').value) || 0;
+      d = buildSectionDrawing(parts, axis, value);
+      if (!d) throw new Error('指定位置に断面がありません (断面タブで位置を確認してください)');
+    } else {
+      d = buildViewDrawing(parts, keys[i], { feature: opts.feature });
+    }
+    if (d) out.push(d);
+  }
+  if (!out.length) throw new Error('図面を生成できませんでした');
+  return out;
+}
+
+function updatePrintTable(app) {
+  var t = $('#tbl-print');
+  t.innerHTML = '';
+  var parts = printTargets(app);
+  if (!parts.length) { t.appendChild(kvRow('-', 'パーツがありません')); return; }
+  var opts = printOptions(app);
+  var keys = selectedPrintViews();
+  if (!keys.length) { t.appendChild(kvRow('-', '図を選んでください')); return; }
+  var b = sceneBounds(parts, false);
+  var pw = opts.landscape ? opts.paper.h : opts.paper.w;
+  var ph = opts.landscape ? opts.paper.w : opts.paper.h;
+  t.appendChild(kvRow('対象', parts.length === 1 ? parts[0].name : parts.length + ' パーツ'));
+  t.appendChild(kvRow('外形 (mm)', fmt(b.size[0], 1) + ' × ' + fmt(b.size[1], 1) + ' × ' + fmt(b.size[2], 1)));
+  t.appendChild(kvRow('用紙', opts.paper.name + ' ' + (opts.landscape ? '横' : '縦') +
+    ' (' + fmt(pw, 0) + ' × ' + fmt(ph, 0) + ')'));
+  // 概算のページ数 (輪郭抽出を行わず外形から見積もる)
+  var est = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var dims = keys[i] === 'section' ? [b.size[0], b.size[1]] : viewExtent(keys[i], b);
+    est += estimatePages(dims[0], dims[1], opts, pw, ph);
+  }
+  t.appendChild(kvRow('推定ページ数', String(est), est > 4 ? 'warn' : ''));
+  t.appendChild(kvRow('倍率', opts.scale === 1 ? '1:1 (実寸)' : opts.scale + ' 倍'));
+}
+
+function viewExtent(key, b) {
+  var v = DRAW_VIEWS[key];
+  if (!v) return [b.size[0], b.size[1]];
+  return [b.size[v.uAxis], b.size[v.vAxis]];
+}
+
+function estimatePages(wMm, hMm, opts, paperW, paperH) {
+  var dimPad = opts.dimensions === false ? 2 : 16;
+  var cw = paperW - opts.margin * 2;
+  var ch = paperH - opts.margin * 2 - PAGE_HEADER_MM - PAGE_FOOTER_MM;
+  if (cw <= 20 || ch <= 20) return 0;
+  var W = (wMm + dimPad) * opts.scale, H = (hMm + dimPad) * opts.scale;
+  var cols = W <= cw ? 1 : Math.ceil((W - opts.overlap) / (cw - opts.overlap));
+  var rows = H <= ch ? 1 : Math.ceil((H - opts.overlap) / (ch - opts.overlap));
+  return Math.max(1, cols) * Math.max(1, rows);
+}
+
+function exportDrawingPDF(app) {
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  opts.note = new Date().toISOString().slice(0, 10);
+  var bytes = renderDrawingsToPDF(drawings, opts);
+  var name = sanitizeFileName(opts.title) + '_1to1.pdf';
+  saveBlob(new Blob([bytes], { type: 'application/pdf' }), name);
+  setStatus(app, name + ' を書き出しました。100% (等倍) で印刷し、100 mm 基準線で確認してください。');
+  updatePrintTable(app);
+}
+
+function exportDrawingSVG(app) {
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  for (var i = 0; i < drawings.length; i++) {
+    var svg = renderDrawingToSVG(drawings[i], opts);
+    var name = sanitizeFileName(opts.title) + '_' + drawings[i].key + '_1to1.svg';
+    saveBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), name);
+  }
+  setStatus(app, drawings.length + ' 件の SVG を書き出しました (mm 指定のため実寸で印刷できます)。');
+}
+
+function previewDrawings(app) {
+  var host = $('#print-preview');
+  host.hidden = false;
+  host.innerHTML = '';
+  var drawings = collectDrawings(app);
+  var opts = printOptions(app);
+  for (var i = 0; i < drawings.length; i++) {
+    var d = drawings[i];
+    var wrap = el('div', { class: 'preview-item' });
+    wrap.appendChild(el('div', {
+      class: 'hint', text: d.titleJp + '  ' + d.uLabel + ' ' + fmt(d.bounds.width, 2) +
+        ' × ' + d.vLabel + ' ' + fmt(d.bounds.height, 2) + ' mm  /  線分 ' + fmtInt(d.silhouette.length + d.feature.length)
+    }));
+    var img = el('div', { class: 'preview-svg' });
+    img.innerHTML = renderDrawingToSVG(d, opts).replace(/^<\?xml[^>]*\?>\s*/, '')
+      .replace(/width="[^"]*"/, 'width="100%"').replace(/height="[^"]*"/, '');
+    wrap.appendChild(img);
+    host.appendChild(wrap);
+  }
+  setStatus(app, 'プレビューを更新しました (画面上の表示は実寸ではありません)。');
+}
+
+function sanitizeFileName(s) {
+  return String(s).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60) || 'drawing';
+}
+
+// ===== 99_main.js =====
+// ---------------------------------------------------------------------------
+// エントリポイント
+// ---------------------------------------------------------------------------
+
+function createApp() {
+  return {
+    parts: [],
+    bed: [220, 220, 250],
+    bedShape: 'rect',
+    gridStep: 10,
+    margin: 5,
+    layout: 'single',
+    singleView: 'iso',
+    orbitCam: makeOrbitCamera(),
+    orthoCam: { center: [110, 110, 40], height: 300 },
+    shadeMode: 0,
+    showBed: true,
+    showDims: true,
+    showBBox: true,
+    ghostOthers: false,
+    xray: false,
+    overhangDeg: 45,
+    clips: [
+      { axis: 0, enabled: false, value: 0, invert: false, cap: true },
+      { axis: 1, enabled: false, value: 0, invert: false, cap: true },
+      { axis: 2, enabled: false, value: 0, invert: false, cap: true }
+    ],
+    measure: { points: [] },
+    mode: null,
+    selection: null,
+    slice: null,
+    contourLines: null,
+    collisionResult: null,
+    lastViewports: null,
+    renderPending: false,
+    R: null,
+    overlay: null
+  };
+}
+
+function main() {
+  var app = createApp();
+  // 自動テストおよび外部からの操作用フック
+  window.__stlViewer = {
+    app: app,
+    parseSTL: parseSTL, buildBinarySTL: buildBinarySTL,
+    computeBounds: computeBounds, computeMassProperties: computeMassProperties,
+    overhangStats: overhangStats, sliceMetrics: sliceMetrics,
+    detectCollisions: detectCollisions, updatePartMatrix: updatePartMatrix,
+    partVolume: partVolume, partArea: partArea,
+    applyScale: applyScale, refreshAll: refreshAll, requestRender: requestRender,
+    updateMeasureTable: updateMeasureTable, fitView: fitView,
+    projectToScreen: projectToScreen, pickAt: pickAt,
+    buildViewDrawing: buildViewDrawing, buildSectionDrawing: buildSectionDrawing,
+    renderDrawingsToPDF: renderDrawingsToPDF, renderDrawingToSVG: renderDrawingToSVG,
+    paginateDrawing: paginateDrawing, collectDrawings: collectDrawings,
+    printOptions: printOptions, outsideBedXY: outsideBedXY,
+    applyBedChange: applyBedChange, syncBedInputs: syncBedInputs
+  };
+  var canvas = document.getElementById('gl');
+  try {
+    app.R = initRenderer(canvas);
+  } catch (e) {
+    document.getElementById('viewport').innerHTML =
+      '<div style="padding:24px;color:#e05f4f">' + e.message + '</div>';
+    return;
+  }
+  app.overlay = document.getElementById('overlay');
+  setupControls(app);
+  setupPrintControls(app);
+  setupCanvasInteraction(app);
+  app.orbitCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
+  app.orthoCam.center = [app.bed[0] / 2, app.bed[1] / 2, 30];
+  fitView(app);
+  refreshAll(app);
+  setStatus(app, 'STL ファイルをドロップするか「STL を開く」から読み込んでください。');
+  document.getElementById('status-right').textContent =
+    'F: 全体表示 / Q: 3 面図 / 1-6: 視点 / Del: 削除 / Esc: 中止 / ドラッグ: 回転・移動 / ホイール: 拡大';
+}
+
+main();
+
+})();
+</script>
+</body>
+</html>

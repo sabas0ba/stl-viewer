@@ -1,0 +1,37 @@
+{
+  "name": "stl-viewer",
+  "version": "1.0.0",
+  "description": "外部依存を持たない単一 HTML の STL ビューア (3D プリント前チェック用)",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "fixtures": "node test/make-fixtures.mjs",
+    "test": "node test/core.test.mjs && node test/pdf-scale.test.mjs",
+    "test:browser": "node test/make-fixtures.mjs && node build.mjs && NODE_PATH=\"$(npm root)\" node test/browser.test.mjs",
+    "test:all": "npm run test && npm run test:browser",
+    "test:unit": "node test/core.test.mjs",
+    "test:pdf": "node test/pdf-scale.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sabas0ba/stl-viewer.git"
+  },
+  "keywords": [
+    "stl",
+    "3d-printing",
+    "webgl2",
+    "viewer",
+    "single-file",
+    "pdf",
+    "technical-drawing"
+  ]
+}

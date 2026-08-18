@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: 単体テストとバンドル
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: コミット済み dist がソースと一致することを確認
+        run: node build.mjs --check
+      - name: コア処理の単体テスト
+        run: node test/core.test.mjs
+      - name: PDF ラスタ化に必要な poppler を導入
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - name: PDF 実寸検証 (300dpi でラスタ化して計測)
+        run: node test/pdf-scale.test.mjs
+
+  browser:
+    name: ブラウザ結合テスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: テスト依存の導入
+        # package-lock.json があれば npm ci で厳密に固定する
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+      - name: Chromium の導入
+        run: npx playwright install --with-deps chromium
+      - name: バンドル
+        run: node build.mjs
+      - name: 検証用 STL の生成
+        run: node test/make-fixtures.mjs
+      - name: 結合テスト
+        run: NODE_PATH="$(npm root)" node test/browser.test.mjs
