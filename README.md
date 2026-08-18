@@ -3,7 +3,8 @@
 外部依存を持たない単一 HTML の STL ビューア。ファイルはブラウザ内でのみ処理し、
 ネットワーク送信は一切行わない。オフライン環境およびファイル URL (`file://`) で動作する。
 
-成果物: `dist/stl-viewer.html`
+- 公開ページ: `https://<ユーザ名>.github.io/stl-viewer/`
+- 単体ファイル: `dist/stl-viewer.html` (ダウンロードしてローカルで開けばオフラインで動作する)
 
 ## 機能
 
@@ -43,17 +44,45 @@
 - 法線はファイル記載値を使わず頂点順序から再計算する。符号付き体積が負の場合は
   面の向きを一括反転して是正する。
 
+## 公開 (GitHub Pages)
+
+`main` へ push すると `.github/workflows/pages.yml` が `dist/` を GitHub Pages へ配置する。
+リポジトリ側で以下を一度だけ設定する。
+
+1. GitHub にリポジトリを作成し push する。
+2. Settings → Pages → Build and deployment → Source を **GitHub Actions** にする。
+3. Actions タブでワークフローが完了すると `https://<ユーザ名>.github.io/<リポジトリ名>/`
+   で公開される。
+
+`dist/` はリポジトリにコミットしている。ソースを変更したら `node build.mjs` を実行して
+生成物も一緒にコミットすること (CI の `node build.mjs --check` で同期を検査する)。
+
 ## 開発
 
 ```sh
-node build.mjs                 # src/ -> dist/stl-viewer.html
+node build.mjs                 # src/ -> dist/index.html, dist/stl-viewer.html
+node build.mjs --check         # コミット済み dist がソースと一致するか検査
 node test/make-fixtures.mjs    # 検証用 STL を生成
 node test/core.test.mjs        # コア処理の単体テスト (24 件)
-NODE_PATH=$(npm root -g) node test/browser.test.mjs   # headless Chromium での結合テスト (27 件)
+NODE_PATH="$(npm root)" node test/browser.test.mjs   # headless Chromium での結合テスト (27 件)
 ```
+
+nix を使う場合は `nix develop` で node 22 と結合テスト用 Chromium が入る。
+`nix build` は単一 HTML を `result/share/stl-viewer/index.html` に生成する。
 
 `src/js/*.js` はファイル名順に連結して 1 つの即時実行関数に格納される。DOM や WebGL に
 依存しないモジュール (`00`-`30`, `85`) は Node の `vm` 上で単体テストできる。
+実装方針とディレクトリ構成は `CLAUDE.md` にまとめている。
+
+### 初回に必要な作業
+
+生成環境に npm レジストリと nix への接続がなかったため、以下のロックファイルを同梱していない。
+最初のクローン後に一度だけ実行してコミットすること。
+
+```sh
+npm install        # package-lock.json を生成 (結合テスト用の playwright 1.56.0)
+nix flake update   # flake.lock を生成 (nix を使う場合のみ)
+```
 
 ## 制限
 
