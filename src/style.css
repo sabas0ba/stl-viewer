@@ -119,8 +119,9 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {
-  flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
-  color: var(--fg-dim); padding: 6px 4px; cursor: pointer; font-size: 12px; font-family: inherit;
+  flex: 1 1 auto; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--fg-dim); padding: 6px 3px; cursor: pointer; font-size: 11px; font-family: inherit;
+  white-space: nowrap;
 }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 

@@ -100,6 +100,7 @@ function refreshAll(app) {
   refreshWarnings(app);
   refreshTransformInputs(app);
   updateClipRanges(app);
+  updateHollowPlan(app);
   requestRender(app);
 }
 
@@ -167,9 +168,11 @@ function refreshDims(app) {
   updateMass(app);
 }
 
-function kvRow(k, v, cls) {
-  var tr = el('tr', cls ? { class: cls } : null, [el('td', { text: k }), el('td', { text: v })]);
-  return tr;
+function kvRow(k, v, cls, title) {
+  var attrs = {};
+  if (cls) attrs.class = cls;
+  if (title) attrs.title = title;
+  return el('tr', attrs, [el('td', { text: k }), el('td', { text: v })]);
 }
 
 function updateMass(app) {
@@ -222,7 +225,13 @@ function refreshWarnings(app) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': プレート下に沈み込み (' + fmt(b.min[2], 2) + ' mm)</span>');
     }
     if (p.topology && !p.topology.watertight) {
-      msgs.push('<span class="w">' + escapeHtml(p.name) + ': メッシュが閉じていません</span>');
+      var q = p.topology;
+      var reason = q.boundaryEdges
+        ? 'メッシュに穴があります (境界エッジ ' + fmtInt(q.boundaryEdges) + ')'
+        : (q.nonManifoldEdges
+          ? '非多様体エッジが ' + fmtInt(q.nonManifoldEdges) + ' 本あります (体積は閉じており多くのスライサで扱えます)'
+          : '面の向きが揃っていません');
+      msgs.push('<span class="w">' + escapeHtml(p.name) + ': ' + reason + '</span>');
     }
     var thin = Math.min(b.size[0], b.size[1], b.size[2]);
     if (thin < 0.8) {

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const jsDir = join(root, 'src', 'js');
-const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|40|42|70|85)_/.test(f)).sort();
+const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|35|40|42|70|85)_/.test(f)).sort();
 const src = files.map((f) => readFileSync(join(jsDir, f), 'utf8')).join('\n');
 
 const ctx = vm.createContext({ console, TextDecoder, Map, Set });
@@ -430,6 +430,127 @@ test('ステージ: 円形の範囲判定', () => {
   assert.equal(G.outsideBedXY(outside, bed, 'circle'), true);
   assert.equal(G.outsideBedXY(outside, bed, 'rect'), false);
   assert.equal(G.outsideBedXY({ min: [-1, 0, 0], max: [10, 10, 10] }, bed, 'rect'), true);
+});
+
+// --- 中抜き (ホロー化) ---
+
+function topologyOf(positions) {
+  const w = G.weldVertices(positions, 1e-4);
+  return G.analyzeTopology(w.index, w.vertexCount);
+}
+
+test('中抜き: 20mm 立方体を壁厚 2mm で抜くと理論体積に一致する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 2, top: 2, bottom: 2, voxel: 0.4 });
+  // 外 20^3 = 8000、空洞 16^3 = 4096 -> 残り 3904 mm^3
+  assert.ok(Math.abs(r.volume.hollow - 3904) < 3904 * 0.02, `volume=${r.volume.hollow}`);
+  assert.ok(Math.abs(r.volume.solid - 8000) < 1, `solid=${r.volume.solid}`);
+  const t = topologyOf(r.positions);
+  assert.ok(t.watertight, JSON.stringify(t));
+  assert.equal(t.shells, 2); // 外殻と空洞の 2 シェル
+});
+
+test('中抜き: 天面厚と底面厚を造形方向に沿って個別に確保する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 1, top: 3, bottom: 2, voxel: 0.4 });
+  // 空洞は X/Y が 18、Z が 20-3-2 = 15 -> 8000 - 4860 = 3140 mm^3
+  assert.ok(Math.abs(r.volume.hollow - 3140) < 3140 * 0.02, `volume=${r.volume.hollow}`);
+});
+
+test('中抜き: 内向きメッシュでも同じ結果になる', () => {
+  const a = G.hollowMesh(cubePositions(20), null, { wall: 2, voxel: 0.4 });
+  const b = G.hollowMesh(G.flipWinding(cubePositions(20)), null, { wall: 2, voxel: 0.4 });
+  assert.ok(Math.abs(a.volume.hollow - b.volume.hollow) < 1e-3, `${a.volume.hollow} != ${b.volume.hollow}`);
+  assert.ok(b.volume.hollow > 0);
+});
+
+test('中抜き: 変換行列 (回転・移動) を適用した姿勢で計算する', () => {
+  const m = G.M4.compose(G.M4.create(), [30, 10, 0], G.Quat.fromAxisAngle([0, 0, 1], 0.3), [1, 1, 1]);
+  const r = G.hollowMesh(cubePositions(20), m, { wall: 2, voxel: 0.4 });
+  assert.ok(Math.abs(r.volume.hollow - 3904) < 3904 * 0.03, `volume=${r.volume.hollow}`);
+  const b = G.computeBounds(r.positions);
+  assert.ok(b.min[0] > 20, `x=${b.min[0]}`); // 出力はワールド座標
+});
+
+test('中抜き: 断面二次モーメント比が角筒の解析値と一致する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 2, top: 2, bottom: 2, voxel: 0.4 });
+  // 側壁だけの層は 20 角筒 - 16 角筒: (20^4 - 16^4) / 20^4 = 0.5904
+  assert.ok(Math.abs(r.sections.minInertiaRatio - 0.5904) < 0.02, `I=${r.sections.minInertiaRatio}`);
+  // 同じ層の断面積比は (400 - 256) / 400 = 0.36
+  assert.ok(Math.abs(r.sections.minAreaRatio - 0.36) < 0.02, `A=${r.sections.minAreaRatio}`);
+});
+
+test('中抜き: 内部構造を入れると体積と剛性が上がる', () => {
+  const empty = G.hollowMesh(cubePositions(20), null, { wall: 2, voxel: 0.4 });
+  const grid = G.hollowMesh(cubePositions(20), null, { wall: 2, voxel: 0.4, infill: 'grid', density: 0.3, rib: 1.2 });
+  assert.ok(grid.volume.hollow > empty.volume.hollow, `${grid.volume.hollow} <= ${empty.volume.hollow}`);
+  assert.ok(grid.sections.minInertiaRatio > empty.sections.minInertiaRatio);
+  assert.ok(grid.volume.hollow < 8000);
+});
+
+test('中抜き: 内部構造の周期が指定した充填率を再現する', () => {
+  const period = G.infillPeriod('grid', 1, 0.2);
+  const u = 1 / period;                 // リブ厚 1mm に対する比
+  assert.ok(Math.abs((2 * u - u * u) - 0.2) < 1e-6, `period=${period}`);
+  assert.ok(G.infillPeriod('grid', 1, 0.4) < period); // 充填率を上げると間隔は詰まる
+});
+
+test('中抜き: 全体再構築なら抜き穴が外へ貫通する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, {
+    wall: 2, voxel: 0.4, mode: 'rebuild', hole: 'bottom', holeDiameter: 5, holeCount: 1
+  });
+  assert.equal(r.holes.length, 1);
+  const t = topologyOf(r.positions);
+  assert.ok(t.watertight, JSON.stringify(t));
+  assert.equal(t.shells, 1); // 空洞が穴で外とつながり 1 シェルになる
+  assert.ok(r.volume.hollow < 3904, `volume=${r.volume.hollow}`);
+});
+
+test('中抜き: 外殻保持では抜き穴を作らず警告を出す', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 2, voxel: 0.4, hole: 'bottom' });
+  assert.equal(r.holes.length, 0);
+  assert.ok(r.warnings.some((w) => /抜き穴は/.test(w)), r.warnings.join(' / '));
+});
+
+test('中抜き: 壁が厚すぎて空洞ができない場合は警告する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 11, voxel: 0.4 });
+  assert.ok(Math.abs(r.volume.hollow - 8000) < 1, `volume=${r.volume.hollow}`);
+  assert.ok(r.warnings.some((w) => /空洞ができていません/.test(w)), r.warnings.join(' / '));
+});
+
+test('中抜き: 薄い壁と粗い格子を警告する', () => {
+  const r = G.hollowMesh(cubePositions(20), null, { wall: 0.6, top: 0.6, bottom: 0.6, voxel: 0.5, lineWidth: 0.4 });
+  assert.ok(r.warnings.some((w) => /押出幅/.test(w)), r.warnings.join(' / '));
+  assert.ok(r.warnings.some((w) => /格子間隔/.test(w)), r.warnings.join(' / '));
+});
+
+test('surface nets: 球の等値面が外向きかつ体積が理論値に近い', () => {
+  const R = 8, h = 0.25;
+  const nx = Math.ceil(2.4 * R / h), n = nx * nx * nx;
+  const field = new Float32Array(n);
+  const o = -1.2 * R;
+  for (let k = 0; k < nx; k++) {
+    for (let j = 0; j < nx; j++) {
+      for (let i = 0; i < nx; i++) {
+        const x = o + i * h, y = o + j * h, z = o + k * h;
+        field[i + j * nx + k * nx * nx] = R - Math.sqrt(x * x + y * y + z * z);
+      }
+    }
+  }
+  const g = { nx, ny: nx, nz: nx, h, origin: [o, o, o] };
+  const pos = G.surfaceNets(field, g, false);
+  const m = G.computeMassProperties(pos);
+  const exact = 4 / 3 * Math.PI * R * R * R;
+  assert.ok(m.volume > 0, `volume=${m.volume}`); // 正 = 外向き
+  assert.ok(Math.abs(m.volume - exact) < exact * 0.01, `volume=${m.volume} exact=${exact}`);
+  const t = topologyOf(pos);
+  assert.ok(t.watertight && t.shells === 1, JSON.stringify(t));
+  // flip を指定すると裏返る
+  assert.ok(G.computeMassProperties(G.surfaceNets(field, g, true)).volume < 0);
+});
+
+test('フィラメント長: 体積を φ1.75 の長さに換算する', () => {
+  const len = G.filamentLength(1000, 1.75);
+  assert.ok(Math.abs(len - 1000 / (Math.PI * 1.75 * 1.75 / 4)) < 1e-9, String(len));
+  assert.ok(Math.abs(len - 415.75) < 0.1, String(len));
 });
 
 let failed = 0;

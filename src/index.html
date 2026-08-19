@@ -76,6 +76,7 @@
         <button class="tab" data-tab="display">表示</button>
         <button class="tab" data-tab="section">断面</button>
         <button class="tab" data-tab="orient">向き</button>
+        <button class="tab" data-tab="hollow">中抜き</button>
         <button class="tab" data-tab="place">配置</button>
         <button class="tab" data-tab="print">図面</button>
       </nav>
@@ -194,6 +195,75 @@
           <span class="hint">要サポート面積と造形高さで評価</span>
         </div>
         <table class="kv" id="tbl-orient"></table>
+      </section>
+
+      <section class="tabpanel" data-panel="hollow" hidden>
+        <div class="panel-title">中抜き (フィラメント削減)<span id="hollow-target" class="hint">パーツ未選択</span></div>
+        <p class="hint">
+          現在の向きのまま中を抜く。Z が造形方向なので、向きを決めてから実行すること。
+          天面・底面の厚みは造形方向に沿って確保する。
+        </p>
+        <div class="row">
+          <label>壁厚 (法線方向)</label>
+          <input type="number" id="in-hollow-wall" value="2" min="0.1" step="0.1" style="width:70px">
+          <span class="hint">mm</span>
+        </div>
+        <div class="row">
+          <label>天面厚</label><input type="number" id="in-hollow-top" value="2" min="0.1" step="0.1" style="width:64px">
+          <label>底面厚</label><input type="number" id="in-hollow-bottom" value="2" min="0.1" step="0.1" style="width:64px">
+          <span class="hint">mm</span>
+        </div>
+        <div class="panel-title">内部構造</div>
+        <div class="row">
+          <select id="sel-hollow-infill">
+            <option value="none">なし (完全な中空)</option>
+            <option value="grid">格子 (直交する縦リブ)</option>
+            <option value="gyroid">ジャイロイド (等方・自己支持)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>充填率</label><input type="number" id="in-hollow-density" value="15" min="1" max="90" step="1" style="width:64px"> %
+          <label>リブ厚</label><input type="number" id="in-hollow-rib" value="1" min="0.1" step="0.1" style="width:64px"> mm
+        </div>
+        <div class="panel-title">抜き穴 (空気・樹脂の逃げ)</div>
+        <div class="row">
+          <select id="sel-hollow-hole">
+            <option value="none">なし</option>
+            <option value="bottom">底面 (−Z)</option>
+            <option value="top">上面 (+Z)</option>
+          </select>
+          <label>直径</label><input type="number" id="in-hollow-hole-d" value="4" min="0.5" step="0.5" style="width:64px">
+          <label>個数</label><input type="number" id="in-hollow-hole-n" value="2" min="1" max="20" step="1" style="width:56px">
+        </div>
+        <div class="panel-title">出力とプリンタ条件</div>
+        <div class="row">
+          <select id="sel-hollow-mode">
+            <option value="shell">外殻を保持 (元の面はそのまま)</option>
+            <option value="rebuild">全体を再構築 (抜き穴・メッシュ修復)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>格子間隔</label><input type="number" id="in-hollow-voxel" value="0" min="0" step="0.05" style="width:70px">
+          <span class="hint">mm / 0 で自動</span>
+        </div>
+        <div class="row">
+          <label>押出幅</label><input type="number" id="in-hollow-line" value="0.4" min="0.05" step="0.05" style="width:64px">
+          <label>層厚</label><input type="number" id="in-hollow-layer" value="0.2" min="0.01" step="0.05" style="width:64px">
+          <span class="hint">mm (判定用)</span>
+        </div>
+        <table class="kv" id="tbl-hollow-plan"></table>
+        <div class="row">
+          <button class="btn primary sm" id="btn-hollow-run">中抜きを実行</button>
+          <button class="btn sm" id="btn-hollow-section">断面で中を見る</button>
+        </div>
+        <div class="panel-title">結果</div>
+        <table class="kv" id="tbl-hollow"></table>
+        <div id="hollow-warn" class="warnings">-</div>
+        <p class="hint">
+          結果は新しいパーツとして追加し、元のパーツは非表示にする。書き出しは上部の
+          「STL 書き出し」から行う。断面二次モーメント比は層ごとの弱軸の値を中実と比べた
+          最小値で、曲げ剛性の目安になる (層間接着の強さは含まない)。
+        </p>
       </section>
 
       <section class="tabpanel" data-panel="place" hidden>
