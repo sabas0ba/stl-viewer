@@ -93,18 +93,34 @@ check('ブラケットの張り出し 28x12mm を検出', Math.abs(ohVals.overha
 
 // --- 断面 ---
 await page.click('.tab[data-tab="section"]');
-await page.evaluate(() => {
-  const a = window.__stlViewer.app;
-  a.clips[2].enabled = true;
-  a.clips[2].value = 15;
-  a.clips[2].ui.chk.checked = true;
-  window.__stlViewer.requestRender(a);
-});
-await page.fill('#in-slice-pos', '15');
-await page.click('#btn-slice');
+const zRow = '#clip-controls .row:nth-child(3)';
+// クリップ平面を有効にするだけで断面輪郭が追従する (「計算」ボタンは廃止)
+await page.check(`${zRow} input[type=checkbox]`);
+await page.fill(`${zRow} input[type=number]`, '15');
+await page.dispatchEvent(`${zRow} input[type=number]`, 'change');
 await page.waitForTimeout(400);
 const sliceText = await page.textContent('#tbl-slice');
-check('断面輪郭を計算する', /断面積/.test(sliceText) && !/NaN/.test(sliceText), sliceText.replace(/\s+/g, ' '));
+check('クリップ平面を有効にすると断面輪郭が計算される', /断面積/.test(sliceText) && !/NaN/.test(sliceText), sliceText.replace(/\s+/g, ' '));
+const sliceLink = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return {
+    active: a.activeClip,
+    axis: a.slice && a.slice.axis,
+    value: a.slice && a.slice.value,
+    source: document.querySelector('#slice-source').textContent,
+  };
+});
+check('断面輪郭がクリップ平面と同じ軸・位置を指す',
+  sliceLink.active === 2 && sliceLink.axis === 2 && Math.abs(sliceLink.value - 15) < 1e-6
+  && /Z 平面 = 15\.00 mm/.test(sliceLink.source),
+  JSON.stringify(sliceLink));
+const clipBadge = await page.evaluate(() => {
+  const b = document.querySelector('#clip-badge');
+  return { hidden: b.hidden, text: b.textContent };
+});
+check('ステータスバーに断面表示中のバッジが出る',
+  clipBadge.hidden === false && /断面表示中/.test(clipBadge.text) && /Z = 15\.0/.test(clipBadge.text),
+  JSON.stringify(clipBadge));
 const sliceMetricsOut = await page.evaluate(() => {
   const a = window.__stlViewer.app;
   return window.__stlViewer.sliceMetrics(a.slice.loops);
@@ -112,6 +128,45 @@ const sliceMetricsOut = await page.evaluate(() => {
 // 中空箱 (外 30 / 内 24) の断面積 = 900 - 576 = 324、ブラケット断面も加算される
 check('中空断面の面積が正しく計算される (穴を差し引く)', sliceMetricsOut.area > 324 - 1 && sliceMetricsOut.closed >= 2, JSON.stringify(sliceMetricsOut));
 await page.screenshot({ path: join(shots, '03-section.png') });
+
+// 断面タブ以外にいてもバッジから解除できる
+await page.click('.tab[data-tab="measure"]');
+await page.click('#clip-badge');
+await page.waitForTimeout(200);
+const afterBadgeClear = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return {
+    enabled: a.clips.some((c) => c.enabled),
+    active: a.activeClip,
+    slice: a.slice,
+    badgeHidden: document.querySelector('#clip-badge').hidden,
+    table: document.querySelector('#tbl-slice').textContent,
+  };
+});
+check('断面タブ以外からバッジで断面を解除できる',
+  afterBadgeClear.enabled === false && afterBadgeClear.active === -1 && afterBadgeClear.slice === null
+  && afterBadgeClear.badgeHidden === true && /クリップ平面が無効/.test(afterBadgeClear.table),
+  JSON.stringify(afterBadgeClear).slice(0, 200));
+
+// Esc でも解除できる (モード中でないとき)
+await page.click('.tab[data-tab="section"]');
+await page.check(`${zRow} input[type=checkbox]`);
+await page.waitForTimeout(200);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+const afterEsc = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return { enabled: a.clips.some((c) => c.enabled), active: a.activeClip };
+});
+check('Esc で断面を解除できる', afterEsc.enabled === false && afterEsc.active === -1, JSON.stringify(afterEsc));
+
+// 一括解除ボタン
+await page.check(`${zRow} input[type=checkbox]`);
+await page.waitForTimeout(200);
+await page.click('#btn-clip-clear');
+await page.waitForTimeout(200);
+const afterClearBtn = await page.evaluate(() => window.__stlViewer.app.clips.some((c) => c.enabled));
+check('「すべて解除」でクリップ平面が解除される', afterClearBtn === false, String(afterClearBtn));
 
 // --- 姿勢 ---
 await page.click('.tab[data-tab="orient"]');
@@ -364,9 +419,13 @@ check('SVG が mm 指定で出力される', /width="[\d.]+mm"/.test(svgText) &&
 
 // 断面図の出力
 await page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app;
   document.querySelectorAll('#print-views input').forEach((c) => { c.checked = c.value === 'section'; });
-  document.querySelector('#sel-slice-axis').value = '2';
-  document.querySelector('#in-slice-pos').value = '3';
+  // 図面の断面は 3D を切っているクリップ平面と同じ位置を使う
+  a.clips[2].enabled = true;
+  a.clips[2].ui.chk.checked = true;
+  V.setActiveClip(a, 2);
+  V.setClipValue(a, 2, 3);
 });
 const secDownload = page.waitForEvent('download', { timeout: 20000 });
 await page.click('#btn-print-pdf');
@@ -430,6 +489,12 @@ const clipState = await page.evaluate(() => {
   return { enabled: c.enabled, value: c.value };
 });
 check('断面表示で Y 平面のクリップが有効になる', clipState.enabled === true, JSON.stringify(clipState));
+const hollowSliceLink = await page.evaluate(() => {
+  const a = window.__stlViewer.app;
+  return { active: a.activeClip, axis: a.slice && a.slice.axis };
+});
+check('中抜きの断面表示が断面輪郭の参照元にもなる',
+  hollowSliceLink.active === 1 && hollowSliceLink.axis === 1, JSON.stringify(hollowSliceLink));
 await page.screenshot({ path: join(shots, '10-hollow.png') });
 
 // 全体再構築 + 抜き穴
@@ -438,7 +503,7 @@ await page.evaluate(() => {
   const src = a.parts.find((p) => p.name === 'solid-block');
   src.visible = true;
   a.selection = src.id;
-  a.clips[1].enabled = false;
+  V.clearClips(a);
   V.refreshAll(a);
 });
 await page.selectOption('#sel-hollow-mode', 'rebuild');
@@ -495,8 +560,9 @@ check('内部構造を入れると中空より材料が増える',
 await page.evaluate(() => {
   const V = window.__stlViewer, a = V.app;
   a.clips[2].enabled = true;
-  a.clips[2].value = 12;
   a.clips[2].ui.chk.checked = true;
+  V.setActiveClip(a, 2);
+  V.setClipValue(a, 2, 12);
   a.parts.forEach((p) => { p.visible = /中抜き/.test(p.name) && p.id === a.selection; });
   V.fitView(a);
   V.refreshAll(a);

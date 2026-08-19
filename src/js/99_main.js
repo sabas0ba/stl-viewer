@@ -25,6 +25,8 @@ function createApp() {
       { axis: 1, enabled: false, value: 0, invert: false, cap: true },
       { axis: 2, enabled: false, value: 0, invert: false, cap: true }
     ],
+    // 断面輪郭・断面図面が参照するクリップ平面の番号 (-1 は断面なし)
+    activeClip: -1,
     measure: { points: [] },
     mode: null,
     selection: null,
@@ -60,7 +62,9 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, filamentLength: filamentLength
+    createPart: createPart, filamentLength: filamentLength,
+    setActiveClip: setActiveClip, setClipValue: setClipValue,
+    clearClips: clearClips, currentClip: currentClip
   };
   var canvas = document.getElementById('gl');
   try {
@@ -81,7 +85,7 @@ function main() {
   refreshAll(app);
   setStatus(app, 'STL ファイルをドロップするか「STL を開く」から読み込んでください。');
   document.getElementById('status-right').textContent =
-    'F: 全体表示 / Q: 3 面図 / 1-6: 視点 / Del: 削除 / Esc: 中止 / ドラッグ: 回転・移動 / ホイール: 拡大';
+    'F: 全体表示 / Q: 3 面図 / 1-6: 視点 / Del: 削除 / Esc: 中止・断面解除 / ドラッグ: 回転・移動 / ホイール: 拡大';
 }
 
 main();

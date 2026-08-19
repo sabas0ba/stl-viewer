@@ -73,9 +73,9 @@ function collectDrawings(app) {
   for (var i = 0; i < keys.length; i++) {
     var d;
     if (keys[i] === 'section') {
-      var axis = parseInt($('#sel-slice-axis').value, 10);
-      var value = parseFloat($('#in-slice-pos').value) || 0;
-      d = buildSectionDrawing(parts, axis, value);
+      var clip = currentClip(app);
+      if (!clip) throw new Error('断面タブでクリップ平面を有効にしてください');
+      d = buildSectionDrawing(parts, clip.axis, clip.value);
       if (!d) throw new Error('指定位置に断面がありません (断面タブで位置を確認してください)');
     } else {
       d = buildViewDrawing(parts, keys[i], { feature: opts.feature });
