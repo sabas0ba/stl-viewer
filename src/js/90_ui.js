@@ -76,8 +76,6 @@ function loadFiles(app, files) {
         setBusy(app, null);
         fitView(app);
         refreshAll(app);
-        var sb = sceneBounds(app.parts, true);
-        if (sb) $('#in-slice-pos').value = fmt((sb.min[2] + sb.max[2]) / 2, 2);
       }
     };
     reader.onerror = function () {
@@ -100,6 +98,7 @@ function refreshAll(app) {
   refreshWarnings(app);
   refreshTransformInputs(app);
   updateClipRanges(app);
+  syncSlice(app);
   updateHollowPlan(app);
   requestRender(app);
 }

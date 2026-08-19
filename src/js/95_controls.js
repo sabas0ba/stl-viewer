@@ -204,9 +204,10 @@ function setupControls(app) {
     app.clips.forEach(function (c) { c.cap = ev.target.checked; });
     requestRender(app);
   });
-  $('#btn-slice').addEventListener('click', function () {
-    withBusy(app, '断面を計算中...', function () { computeSlice(app); });
+  $('#btn-clip-clear').addEventListener('click', function () {
+    if (!clearClips(app)) setStatus(app, '有効な断面はありません。');
   });
+  $('#clip-badge').addEventListener('click', function () { clearClips(app); });
   $('#btn-slice-prev').addEventListener('click', function () { stepSlice(app, -1); });
   $('#btn-slice-next').addEventListener('click', function () { stepSlice(app, 1); });
 
@@ -309,9 +310,17 @@ function setupControls(app) {
 
   // --- キーボード ---
   window.addEventListener('keydown', function (ev) {
-    if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
-    if (ev.key === 'Escape') { setMode(app, null); }
-    else if (ev.key === 'Delete' || ev.key === 'Backspace') { deleteSelected(app); }
+    var inField = /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName);
+    // Esc は入力欄にフォーカスがあっても効かせる。断面を有効にした直後は
+    // チェックボックスにフォーカスが残るため、ここで弾くと解除が届かない。
+    if (ev.key === 'Escape') {
+      if (inField) ev.target.blur();
+      if (app.mode) setMode(app, null);
+      else clearClips(app);
+      return;
+    }
+    if (inField) return;
+    if (ev.key === 'Delete' || ev.key === 'Backspace') { deleteSelected(app); }
     else if (ev.key === 'f' || ev.key === 'F') { fitView(app); }
     else if (ev.key === 'q' || ev.key === 'Q') {
       $(app.layout === 'quad' ? '#btn-layout-single' : '#btn-layout-quad').click();
@@ -377,39 +386,142 @@ function computeOverhangTable(app) {
 // クリップ平面
 // ---------------------------------------------------------------------------
 
+var CLIP_NAMES = ['X', 'Y', 'Z'];
+
+// 断面輪郭と断面図面が参照するクリップ平面。有効な平面がなければ null
+function currentClip(app) {
+  var i = app.activeClip;
+  if (i < 0 || i >= app.clips.length) return null;
+  return app.clips[i].enabled ? app.clips[i] : null;
+}
+
+function firstEnabledClip(app) {
+  for (var i = 0; i < app.clips.length; i++) {
+    if (app.clips[i].enabled) return i;
+  }
+  return -1;
+}
+
+// 参照元の平面を切り替える (中抜きタブなど他機能から呼ぶ)
+function setActiveClip(app, idx) {
+  app.activeClip = idx;
+  syncSlice(app);
+}
+
+// 平面の位置を設定し、UI と断面輪郭を追従させる
+function setClipValue(app, idx, v) {
+  var clip = app.clips[idx];
+  if (!clip) return;
+  clip.value = v;
+  if (clip.ui) {
+    clip.ui.range.value = v;
+    clip.ui.num.value = fmt(v, 2);
+  }
+  syncSlice(app);
+}
+
+// クリップ平面をまとめて解除する。解除するものがあれば true
+function clearClips(app) {
+  var any = false;
+  app.clips.forEach(function (c) {
+    if (c.enabled) any = true;
+    c.enabled = false;
+    if (c.ui) c.ui.chk.checked = false;
+  });
+  app.activeClip = -1;
+  syncSlice(app);
+  if (any) setStatus(app, '断面表示を解除しました。');
+  return any;
+}
+
+// クリップ平面の状態から 3D 表示・断面輪郭・表・バッジをまとめて更新する。
+// 断面に関わる表示はすべてここを通し、状態が食い違わないようにする。
+function syncSlice(app) {
+  if (currentClip(app)) {
+    computeSlice(app);
+  } else {
+    app.slice = null;
+    app.contourLines = null;
+    drawSliceCanvas(app);
+    updateSliceTable(app);
+    requestRender(app);
+  }
+  updateSliceSource(app);
+  updateClipBadge(app);
+}
+
+// 断面輪郭がどの平面を見ているかを断面タブに明示する
+function updateSliceSource(app) {
+  var host = $('#slice-source');
+  if (!host) return;
+  var clip = currentClip(app);
+  app.clips.forEach(function (c, i) {
+    if (c.ui) c.ui.row.classList.toggle('clip-active', clip !== null && i === app.activeClip);
+  });
+  host.textContent = clip
+    ? CLIP_NAMES[clip.axis] + ' 平面 = ' + fmt(clip.value, 2) + ' mm の断面を表示している (図面タブの断面も同じ位置を使う)'
+    : 'クリップ平面を有効にすると、その位置の断面をここに表示する。';
+}
+
+// タブに関係なく断面表示中であることを示し、その場で解除できるようにする
+function updateClipBadge(app) {
+  var badge = $('#clip-badge');
+  if (!badge) return;
+  var on = app.clips.filter(function (c) { return c.enabled; });
+  if (!on.length) { badge.hidden = true; return; }
+  badge.hidden = false;
+  badge.textContent = '断面表示中 ' + on.map(function (c) {
+    return CLIP_NAMES[c.axis] + ' = ' + fmt(c.value, 1);
+  }).join(' / ') + ' — 解除';
+}
+
 function buildClipControls(app) {
   var host = $('#clip-controls');
   host.innerHTML = '';
-  var names = ['X', 'Y', 'Z'];
   app.clips.forEach(function (clip, idx) {
     var chk = el('input', { type: 'checkbox' });
     var range = el('input', { type: 'range', min: 0, max: 100, step: 0.1, value: clip.value });
     var num = el('input', { type: 'number', step: 0.5, value: clip.value, style: 'width:74px' });
     var invBtn = el('button', { class: 'btn sm', text: '反転' });
+    var row = el('div', { class: 'row' }, [
+      el('label', {}, [chk, document.createTextNode(' ' + CLIP_NAMES[idx] + ' 平面')]),
+      range, num, invBtn
+    ]);
     chk.addEventListener('change', function () {
       clip.enabled = chk.checked;
-      requestRender(app);
+      // 有効にした平面をそのまま断面輪郭の参照元にする
+      if (clip.enabled) app.activeClip = idx;
+      else if (app.activeClip === idx) app.activeClip = firstEnabledClip(app);
+      syncSlice(app);
     });
-    function setValue(v) {
-      clip.value = v;
-      range.value = v;
-      num.value = fmt(v, 2);
-      if (clip.enabled) requestRender(app);
-    }
-    range.addEventListener('input', function () { setValue(parseFloat(range.value)); });
-    num.addEventListener('change', function () { setValue(parseFloat(num.value) || 0); });
+    // ドラッグ中は 3D だけ追従させ、離した時点で断面輪郭を計算する
+    range.addEventListener('input', function () {
+      clip.value = parseFloat(range.value);
+      num.value = fmt(clip.value, 2);
+      if (!clip.enabled) return;
+      app.activeClip = idx;
+      requestRender(app);
+      updateClipBadge(app);
+      updateSliceSource(app);
+    });
+    range.addEventListener('change', function () {
+      if (clip.enabled) app.activeClip = idx;
+      setClipValue(app, idx, parseFloat(range.value));
+    });
+    num.addEventListener('change', function () {
+      if (clip.enabled) app.activeClip = idx;
+      setClipValue(app, idx, parseFloat(num.value) || 0);
+    });
     invBtn.addEventListener('click', function () {
       clip.invert = !clip.invert;
       invBtn.classList.toggle('active', clip.invert);
       requestRender(app);
     });
-    clip.ui = { range: range, num: num, chk: chk };
-    host.appendChild(el('div', { class: 'row' }, [
-      el('label', {}, [chk, document.createTextNode(' ' + names[idx] + ' 平面')]),
-      range, num, invBtn
-    ]));
+    clip.ui = { range: range, num: num, chk: chk, row: row };
+    host.appendChild(row);
   });
   updateClipRanges(app);
+  syncSlice(app);
 }
 
 function updateClipRanges(app) {
@@ -435,8 +547,10 @@ function updateClipRanges(app) {
 // ---------------------------------------------------------------------------
 
 function computeSlice(app) {
-  var axis = parseInt($('#sel-slice-axis').value, 10);
-  var value = parseFloat($('#in-slice-pos').value) || 0;
+  var clip = currentClip(app);
+  if (!clip) return;
+  var axis = clip.axis;
+  var value = clip.value;
   var Rm = sliceRotation(axis);
   var invR = M4.invert(M4.create(), Rm);
   var loops = [];
@@ -469,10 +583,10 @@ function computeSlice(app) {
 }
 
 function stepSlice(app, dir) {
+  var clip = currentClip(app);
+  if (!clip) { setStatus(app, 'クリップ平面を有効にしてください。'); return; }
   var step = parseFloat($('#in-slice-step').value) || 0.2;
-  var pos = (parseFloat($('#in-slice-pos').value) || 0) + dir * step;
-  $('#in-slice-pos').value = fmt(pos, 3);
-  computeSlice(app);
+  setClipValue(app, app.activeClip, clip.value + dir * step);
 }
 
 function pointInPolygon(pt, poly) {
@@ -510,7 +624,7 @@ function sliceMetrics(loops) {
 function updateSliceTable(app) {
   var t = $('#tbl-slice');
   t.innerHTML = '';
-  if (!app.slice) { t.appendChild(kvRow('-', '未計算')); return; }
+  if (!app.slice) { t.appendChild(kvRow('-', 'クリップ平面が無効')); return; }
   var m = sliceMetrics(app.slice.loops);
   var axisName = ['X', 'Y', 'Z'][app.slice.axis];
   t.appendChild(kvRow('切断位置', axisName + ' = ' + fmt(app.slice.value, 3) + ' mm'));

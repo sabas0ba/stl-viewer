@@ -128,6 +128,6 @@ function showHollowSection(app) {
     clip.ui.num.value = fmt(clip.value, 2);
   }
   $('#chk-cap').checked = true;
-  requestRender(app);
-  setStatus(app, 'Y 平面で切断して表示しています (断面タブで解除できます)。');
+  setActiveClip(app, 1);
+  setStatus(app, 'Y 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
 }

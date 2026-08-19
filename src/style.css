@@ -71,6 +71,15 @@ aside {
   padding: 5px 12px; background: var(--bg2); border-top: 1px solid var(--line);
   color: var(--fg-dim); font-size: 11px;
 }
+/* 断面表示中であることをタブに関係なく示し、その場で解除できるようにする */
+.clip-badge {
+  margin-left: auto; background: var(--bg3); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 8px; padding: 1px 8px;
+  cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;
+}
+.clip-badge:hover { background: #2c313b; }
+/* 断面図の参照元になっているクリップ平面の行 */
+.row.clip-active { background: var(--bg3); border-radius: 4px; }
 
 button.btn {
   background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
