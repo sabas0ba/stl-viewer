@@ -126,15 +126,6 @@ nix を使う場合は `nix develop` で node 22 と結合テスト用 Chromium 
 依存しないモジュール (`00`-`42`, `70`, `85`) は Node の `vm` 上で単体テストできる。
 実装方針とディレクトリ構成は `CLAUDE.md` にまとめている。
 
-### 初回に必要な作業
-
-`package-lock.json` は生成済みである。nix を使う場合のみ、`flake.lock` が未生成のため
-一度だけ以下を実行してコミットすること (生成環境に nix がなかった)。
-
-```sh
-nix flake update   # flake.lock を生成 (nix を使う場合のみ)
-```
-
 ## 制限
 
 - 対応形式は STL のみ (3MF / OBJ / STEP は非対応)。

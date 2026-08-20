@@ -9,8 +9,8 @@
   playwright 用 Chromium が入る)。dotfiles 側の環境を使う場合もそちらを優先してよい。
 - `package-lock.json` は生成済みである (playwright 1.56.0)。依存を変更した場合は
   `npm install` の結果を一緒にコミットすること。
-- `flake.lock` は未生成である。nix を使う環境で一度 `nix flake update` を実行して
-  コミットすること (生成環境に nix がなかったため)。
+- `flake.lock` は生成済みである (nixpkgs nixos-25.11)。nixpkgs を更新する場合は
+  `nix flake update` の結果を一緒にコミットすること。
 
 ## このリポジトリの構成
 
