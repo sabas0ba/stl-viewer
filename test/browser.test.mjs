@@ -71,14 +71,15 @@ await page.screenshot({ path: join(shots, '00-bars-hidden.png') });
 await page.click('#btn-bar-left');
 await page.click('#btn-bar-top');
 
-await page.setViewportSize({ width: 640, height: 900 });
+const mobileViewport = { width: 640, height: 900 };
+await page.setViewportSize(mobileViewport);
 await page.waitForTimeout(100);
 const mobileButtonsVisible = await page.evaluate(() => ['left', 'right'].map((bar) => {
   const r = document.querySelector(`#btn-bar-${bar}`).getBoundingClientRect();
   return { bar, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 }));
 check('モバイル幅で左右バーのハンドルが画面内に表示される',
-  mobileButtonsVisible.every((r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight),
+  mobileButtonsVisible.every((r) => r.left >= 0 && r.right <= mobileViewport.width && r.top >= 0 && r.bottom <= mobileViewport.height),
   JSON.stringify(mobileButtonsVisible));
 await page.click('#btn-bar-left');
 await page.click('#btn-bar-right');
@@ -88,7 +89,7 @@ const mobileButtonsHidden = await page.evaluate(() => ['left', 'right'].map((bar
   return { bar, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 }));
 check('モバイル幅で左右バーを隠しても復帰ハンドルが画面内に残る',
-  mobileButtonsHidden.every((r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight),
+  mobileButtonsHidden.every((r) => r.left >= 0 && r.right <= mobileViewport.width && r.top >= 0 && r.bottom <= mobileViewport.height),
   JSON.stringify(mobileButtonsHidden));
 check('モバイル幅で左右の復帰ハンドルが重ならない',
   mobileButtonsHidden[0].right <= mobileButtonsHidden[1].left,
