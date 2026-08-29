@@ -200,6 +200,12 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
   #right-shell { order: 2; }
   #right { width: 100%; border-left: none; }
   #viewport { order: 1; min-height: 42vh; }
+  #btn-bar-left, #btn-bar-right {
+    top: 0; right: auto; width: 36px; height: 20px;
+    transform: translate(-50%, -100%); border-radius: 4px 4px 0 0;
+  }
+  #btn-bar-left { left: calc(50% - 22px); }
+  #btn-bar-right { left: calc(50% + 22px); }
 }
 
 .print-preview { margin-top: 8px; }
