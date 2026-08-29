@@ -38,6 +38,66 @@ check('WebGL2 コンテキストを取得できる', await page.evaluate(() => {
   return !!c.getContext('webgl2');
 }));
 
+// --- バーの表示切り替え ---
+const initialViewport = await page.locator('#viewport').boundingBox();
+for (const bar of ['left', 'right', 'top', 'bottom']) {
+  const target = { left: '#left', right: '#right', top: '#topbar', bottom: '#status' }[bar];
+  const button = `#btn-bar-${bar}`;
+  await page.click(button);
+  await page.waitForTimeout(100);
+  const hiddenState = await page.evaluate(({ target, button }) => ({
+    hidden: document.querySelector(target).hidden,
+    pressed: document.querySelector(button).getAttribute('aria-pressed'),
+    label: document.querySelector(button).getAttribute('aria-label')
+  }), { target, button });
+  check(`${bar} バーを個別に隠せる`,
+    hiddenState.hidden && hiddenState.pressed === 'false' && /表示$/.test(hiddenState.label),
+    JSON.stringify(hiddenState));
+  await page.click(button);
+  const shownState = await page.evaluate(({ target, button }) => ({
+    hidden: document.querySelector(target).hidden,
+    pressed: document.querySelector(button).getAttribute('aria-pressed')
+  }), { target, button });
+  check(`${bar} バーを再表示できる`, !shownState.hidden && shownState.pressed === 'true', JSON.stringify(shownState));
+}
+await page.click('#btn-bar-left');
+await page.click('#btn-bar-top');
+await page.waitForTimeout(100);
+const expandedViewport = await page.locator('#viewport').boundingBox();
+check('バーを隠すと表示領域が拡張される',
+  expandedViewport.width > initialViewport.width && expandedViewport.height > initialViewport.height,
+  JSON.stringify({ initialViewport, expandedViewport }));
+await page.screenshot({ path: join(shots, '00-bars-hidden.png') });
+await page.click('#btn-bar-left');
+await page.click('#btn-bar-top');
+
+const mobileViewport = { width: 640, height: 900 };
+await page.setViewportSize(mobileViewport);
+await page.waitForTimeout(100);
+const mobileButtonsVisible = await page.evaluate(() => ['left', 'right'].map((bar) => {
+  const r = document.querySelector(`#btn-bar-${bar}`).getBoundingClientRect();
+  return { bar, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+}));
+check('モバイル幅で左右バーのハンドルが画面内に表示される',
+  mobileButtonsVisible.every((r) => r.left >= 0 && r.right <= mobileViewport.width && r.top >= 0 && r.bottom <= mobileViewport.height),
+  JSON.stringify(mobileButtonsVisible));
+await page.click('#btn-bar-left');
+await page.click('#btn-bar-right');
+await page.waitForTimeout(100);
+const mobileButtonsHidden = await page.evaluate(() => ['left', 'right'].map((bar) => {
+  const r = document.querySelector(`#btn-bar-${bar}`).getBoundingClientRect();
+  return { bar, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+}));
+check('モバイル幅で左右バーを隠しても復帰ハンドルが画面内に残る',
+  mobileButtonsHidden.every((r) => r.left >= 0 && r.right <= mobileViewport.width && r.top >= 0 && r.bottom <= mobileViewport.height),
+  JSON.stringify(mobileButtonsHidden));
+check('モバイル幅で左右の復帰ハンドルが重ならない',
+  mobileButtonsHidden[0].right <= mobileButtonsHidden[1].left,
+  JSON.stringify(mobileButtonsHidden));
+await page.click('#btn-bar-left');
+await page.click('#btn-bar-right');
+await page.setViewportSize({ width: 1440, height: 900 });
+
 // --- ファイル読み込み ---
 await page.setInputFiles('#file-input', [
   join(here, 'fixtures', 'hollow-box.stl'),

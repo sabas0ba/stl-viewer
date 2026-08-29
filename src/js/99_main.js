@@ -10,6 +10,7 @@ function createApp() {
     gridStep: 10,
     margin: 5,
     layout: 'single',
+    bars: { left: true, right: true, top: true, bottom: true },
     singleView: 'iso',
     orbitCam: makeOrbitCamera(),
     orthoCam: { center: [110, 110, 40], height: 300 },

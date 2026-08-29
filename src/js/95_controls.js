@@ -2,6 +2,26 @@
 // パネル操作の配線
 // ---------------------------------------------------------------------------
 
+var BAR_CONTROLS = {
+  left: { target: '#left', label: '左', visibleText: '‹', hiddenText: '›' },
+  right: { target: '#right', label: '右', visibleText: '›', hiddenText: '‹' },
+  top: { target: '#topbar', label: '上', visibleText: '⌃', hiddenText: '⌄' },
+  bottom: { target: '#status', label: '下', visibleText: '⌄', hiddenText: '⌃' }
+};
+
+function setBarVisible(app, name, visible) {
+  var control = BAR_CONTROLS[name];
+  var button = $('#btn-bar-' + name);
+  app.bars[name] = visible;
+  $(control.target).hidden = !visible;
+  button.classList.toggle('active', visible);
+  button.setAttribute('aria-pressed', visible ? 'true' : 'false');
+  button.setAttribute('aria-label', control.label + 'バーを' + (visible ? '隠す' : '表示'));
+  button.title = button.getAttribute('aria-label');
+  button.textContent = visible ? control.visibleText : control.hiddenText;
+  requestRender(app);
+}
+
 function setupControls(app) {
   var i;
 
@@ -36,6 +56,13 @@ function setupControls(app) {
   $('#btn-layout-single').addEventListener('click', function () { setLayout('single'); });
   $('#btn-layout-quad').addEventListener('click', function () { setLayout('quad'); });
   setLayout('single');
+
+  Object.keys(BAR_CONTROLS).forEach(function (name) {
+    $('#btn-bar-' + name).addEventListener('click', function () {
+      setBarVisible(app, name, !app.bars[name]);
+    });
+    setBarVisible(app, name, app.bars[name]);
+  });
 
   $('#sel-view').addEventListener('change', function (ev) {
     app.singleView = ev.target.value;
