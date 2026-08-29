@@ -49,6 +49,8 @@ body {
 .tb-label { color: var(--fg-dim); font-size: 11px; }
 
 main { display: flex; flex: 1; min-height: 0; }
+.bar-shell { position: relative; z-index: 3; flex-shrink: 0; }
+.side-bar-shell { display: flex; min-height: 0; }
 
 aside {
   width: 268px; background: var(--bg2); border-right: 1px solid var(--line);
@@ -59,6 +61,19 @@ aside {
 #viewport { position: relative; flex: 1; min-width: 0; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+button.btn.bar-toggle {
+  position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center;
+  min-width: 0; padding: 0; background: var(--bg2); color: var(--fg-dim);
+}
+button.btn.bar-toggle.active { color: var(--fg); }
+button.btn.bar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#btn-bar-left, #btn-bar-right { top: 50%; width: 20px; height: 36px; }
+#btn-bar-left { right: 0; transform: translate(100%, -50%); border-radius: 0 4px 4px 0; }
+#btn-bar-right { left: 0; transform: translate(-100%, -50%); border-radius: 4px 0 0 4px; }
+#btn-bar-top, #btn-bar-bottom { left: 50%; width: 36px; height: 20px; }
+#btn-bar-top { bottom: 0; transform: translate(-50%, 100%); border-radius: 0 0 4px 4px; }
+#btn-bar-bottom { top: 0; transform: translate(-50%, -100%); border-radius: 4px 4px 0 0; }
 
 .vp-label { fill: rgba(230,232,236,.55); font-size: 11px; font-family: var(--font); }
 .dim-line { stroke: rgba(240,200,120,.85); stroke-width: 1; }
@@ -191,8 +206,9 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
   #status-right { display: none; }
   main { flex-direction: column; }
   aside { width: 100%; max-height: 34vh; border-right: none; border-top: 1px solid var(--line); }
-  #left { order: 3; }
-  #right { order: 2; width: 100%; border-left: none; }
+  #left-shell { order: 3; }
+  #right-shell { order: 2; }
+  #right { width: 100%; border-left: none; }
   #viewport { order: 1; min-height: 42vh; }
 }
 
@@ -208,7 +224,8 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
 </head>
 <body>
 <div id="app">
-  <header id="topbar">
+  <div id="top-shell" class="bar-shell horizontal-bar-shell">
+    <header id="topbar">
     <div class="brand">STL Viewer<span class="sub">3D プリント前チェック</span></div>
     <div class="tb-group">
       <button id="btn-open" class="btn primary">STL を開く</button>
@@ -245,18 +262,23 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
       <button class="btn" id="btn-export">STL 書き出し</button>
       <button class="btn" id="btn-report">レポート</button>
     </div>
-  </header>
+    </header>
+    <button class="btn bar-toggle" id="btn-bar-top" type="button" aria-pressed="true" aria-label="上バーを隠す">⌃</button>
+  </div>
 
   <main>
-    <aside id="left">
-      <div class="panel-title">パーツ<span id="part-count" class="badge">0</span></div>
-      <div id="part-list"></div>
-      <div id="drop-hint" class="drop-hint">
-        STL ファイルをここにドロップ<br><span>複数ファイル可 / binary・ASCII 対応</span>
-      </div>
-      <div class="panel-title">警告</div>
-      <div id="warnings" class="warnings">-</div>
-    </aside>
+    <div id="left-shell" class="bar-shell side-bar-shell">
+      <aside id="left">
+        <div class="panel-title">パーツ<span id="part-count" class="badge">0</span></div>
+        <div id="part-list"></div>
+        <div id="drop-hint" class="drop-hint">
+          STL ファイルをここにドロップ<br><span>複数ファイル可 / binary・ASCII 対応</span>
+        </div>
+        <div class="panel-title">警告</div>
+        <div id="warnings" class="warnings">-</div>
+      </aside>
+      <button class="btn bar-toggle" id="btn-bar-left" type="button" aria-pressed="true" aria-label="左バーを隠す">‹</button>
+    </div>
 
     <div id="viewport">
       <canvas id="gl"></canvas>
@@ -265,7 +287,8 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
       <div id="busy" class="busy" hidden><span></span></div>
     </div>
 
-    <aside id="right">
+    <div id="right-shell" class="bar-shell side-bar-shell">
+      <aside id="right">
       <nav class="tabs">
         <button class="tab active" data-tab="measure">計測</button>
         <button class="tab" data-tab="display">表示</button>
@@ -564,14 +587,19 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           PDF 内の文字はフォント非埋め込みのため ASCII のみとなる。
         </p>
       </section>
-    </aside>
+      </aside>
+      <button class="btn bar-toggle" id="btn-bar-right" type="button" aria-pressed="true" aria-label="右バーを隠す">›</button>
+    </div>
   </main>
 
-  <footer id="status">
-    <span id="status-msg">STL ファイルを開いてください。</span>
-    <button id="clip-badge" class="clip-badge" hidden></button>
-    <span id="status-right" class="mono"></span>
-  </footer>
+  <div id="bottom-shell" class="bar-shell horizontal-bar-shell">
+    <footer id="status">
+      <span id="status-msg">STL ファイルを開いてください。</span>
+      <button id="clip-badge" class="clip-badge" hidden></button>
+      <span id="status-right" class="mono"></span>
+    </footer>
+    <button class="btn bar-toggle" id="btn-bar-bottom" type="button" aria-pressed="true" aria-label="下バーを隠す">⌄</button>
+  </div>
 </div>
 <script>
 (function () {
@@ -4569,6 +4597,26 @@ function setMode(app, mode) {
 // パネル操作の配線
 // ---------------------------------------------------------------------------
 
+var BAR_CONTROLS = {
+  left: { target: '#left', label: '左', visibleText: '‹', hiddenText: '›' },
+  right: { target: '#right', label: '右', visibleText: '›', hiddenText: '‹' },
+  top: { target: '#topbar', label: '上', visibleText: '⌃', hiddenText: '⌄' },
+  bottom: { target: '#status', label: '下', visibleText: '⌄', hiddenText: '⌃' }
+};
+
+function setBarVisible(app, name, visible) {
+  var control = BAR_CONTROLS[name];
+  var button = $('#btn-bar-' + name);
+  app.bars[name] = visible;
+  $(control.target).hidden = !visible;
+  button.classList.toggle('active', visible);
+  button.setAttribute('aria-pressed', visible ? 'true' : 'false');
+  button.setAttribute('aria-label', control.label + 'バーを' + (visible ? '隠す' : '表示'));
+  button.title = button.getAttribute('aria-label');
+  button.textContent = visible ? control.visibleText : control.hiddenText;
+  requestRender(app);
+}
+
 function setupControls(app) {
   var i;
 
@@ -4603,6 +4651,13 @@ function setupControls(app) {
   $('#btn-layout-single').addEventListener('click', function () { setLayout('single'); });
   $('#btn-layout-quad').addEventListener('click', function () { setLayout('quad'); });
   setLayout('single');
+
+  Object.keys(BAR_CONTROLS).forEach(function (name) {
+    $('#btn-bar-' + name).addEventListener('click', function () {
+      setBarVisible(app, name, !app.bars[name]);
+    });
+    setBarVisible(app, name, app.bars[name]);
+  });
 
   $('#sel-view').addEventListener('change', function (ev) {
     app.singleView = ev.target.value;
@@ -5784,6 +5839,7 @@ function createApp() {
     gridStep: 10,
     margin: 5,
     layout: 'single',
+    bars: { left: true, right: true, top: true, bottom: true },
     singleView: 'iso',
     orbitCam: makeOrbitCamera(),
     orthoCam: { center: [110, 110, 40], height: 300 },
