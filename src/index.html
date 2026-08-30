@@ -39,11 +39,13 @@
     </div>
     <div class="tb-group">
       <label class="tb-label">シェーディング</label>
-      <select id="sel-shade">
-        <option value="0">単色</option>
-        <option value="1">オーバーハング</option>
-        <option value="2">高さ</option>
-      </select>
+        <select id="sel-shade">
+          <option value="0">単色</option>
+          <option value="1">オーバーハング</option>
+          <option value="2">高さ</option>
+          <option value="3">ライト</option>
+          <option value="4" selected>AO 近似 + ライト</option>
+        </select>
     </div>
     <div class="tb-group right">
       <button class="btn" id="btn-fit">全体表示</button>
@@ -72,6 +74,13 @@
     <div id="viewport">
       <canvas id="gl"></canvas>
       <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="z-section-control" class="viewport-control">
+        <label><input type="checkbox" id="chk-z-section"> Z 断面</label>
+        <input type="range" id="in-z-section" min="0" max="1" step="0.1" value="0.5" aria-label="Z 断面位置">
+        <span id="z-section-value" class="mono">-</span>
+        <button class="btn sm" id="btn-quick-xray" type="button">透過 + 成分色分け</button>
+        <button class="btn sm" id="btn-quick-xray-off" type="button">透過解除</button>
+      </div>
       <div id="mode-hint" class="mode-hint" hidden></div>
       <div id="busy" class="busy" hidden><span></span></div>
     </div>
@@ -93,6 +102,14 @@
         <table class="kv" id="tbl-dims"></table>
         <div class="panel-title">品質</div>
         <table class="kv" id="tbl-quality"></table>
+        <div class="panel-title">独立パーツ</div>
+        <div class="row">
+          <select id="sel-component"><option value="">すべて表示</option></select>
+          <button class="btn sm" id="btn-component-all">すべて表示</button>
+          <button class="btn sm" id="btn-component-add">選択成分をパーツに追加</button>
+          <button class="btn sm" id="btn-component-export">選択成分を STL 保存</button>
+        </div>
+        <table class="kv" id="tbl-components"></table>
         <div class="panel-title">材料</div>
         <div class="row">
           <select id="sel-material"></select>
@@ -142,7 +159,29 @@
           <label><input type="checkbox" id="chk-bbox" checked> 外形ボックス</label>
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
+          <label><input type="checkbox" id="chk-components"> 独立パーツを図示</label>
+          <label><input type="checkbox" id="chk-component-colors"> 独立成分を色分け</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
+        </div>
+        <p class="hint shade-info">AO 近似は下面・凹部側の環境光を抑えて、細かい凹凸を見やすくします。物理的な遮蔽量ではありません。</p>
+        <div class="panel-title">ライト調整</div>
+        <div class="row light-settings">
+          <label>位置 X</label><input type="number" id="in-light-x" value="1" min="-5" max="5" step="0.1">
+          <label>Y</label><input type="number" id="in-light-y" value="-1" min="-5" max="5" step="0.1">
+          <label>Z</label><input type="number" id="in-light-z" value="1" min="-5" max="5" step="0.1">
+        </div>
+        <p class="hint shade-info">位置はモデル中心からの相対値です（外形半径 = 1）。位置が照明方向になります。</p>
+        <div class="row">
+          <label>ライト強度</label><input type="range" id="in-light-strength" min="0" max="2" step="0.05" value="1">
+          <span id="light-strength-val" class="mono">1.00</span>
+        </div>
+        <div class="row">
+          <label>環境光</label><input type="range" id="in-light-ambient" min="0" max="1" step="0.05" value="0.18">
+          <span id="light-ambient-val" class="mono">0.18</span>
+        </div>
+        <div class="row">
+          <label>AO 強度</label><input type="range" id="in-ao-strength" min="0" max="1" step="0.05" value="0.55">
+          <span id="ao-strength-val" class="mono">0.55</span>
         </div>
       </section>
 
@@ -225,6 +264,7 @@
             <option value="gyroid">ジャイロイド (等方・自己支持)</option>
           </select>
         </div>
+        <div id="hollow-infill-info" class="infill-info hint"></div>
         <div class="row">
           <label>充填率</label><input type="number" id="in-hollow-density" value="15" min="1" max="90" step="1" style="width:64px"> %
           <label>リブ厚</label><input type="number" id="in-hollow-rib" value="1" min="0.1" step="0.1" style="width:64px"> mm

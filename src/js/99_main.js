@@ -14,10 +14,14 @@ function createApp() {
     singleView: 'iso',
     orbitCam: makeOrbitCamera(),
     orthoCam: { center: [110, 110, 40], height: 300 },
-    shadeMode: 0,
+    shadeMode: 4,
+    light: { position: [1, -1, 1], strength: 1, ambient: 0.18, ao: 0.55 },
     showBed: true,
     showDims: true,
     showBBox: true,
+    showComponents: false,
+    componentColors: false,
+    componentFocus: null,
     ghostOthers: false,
     xray: false,
     overhangDeg: 45,
@@ -26,6 +30,7 @@ function createApp() {
       { axis: 1, enabled: false, value: 0, invert: false, cap: true },
       { axis: 2, enabled: false, value: 0, invert: false, cap: true }
     ],
+    zClipInitialized: false,
     // 断面輪郭・断面図面が参照するクリップ平面の番号 (-1 は断面なし)
     activeClip: -1,
     measure: { points: [] },
@@ -63,7 +68,7 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, filamentLength: filamentLength,
+    createPart: createPart, analyzeComponents: analyzeComponents, componentPositions: componentPositions, filamentLength: filamentLength,
     setActiveClip: setActiveClip, setClipValue: setClipValue,
     clearClips: clearClips, currentClip: currentClip
   };

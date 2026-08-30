@@ -91,6 +91,21 @@ test('頂点統合とトポロジ: 立方体は水密・1 シェル・8 頂点',
   assert.equal(t.watertight, true);
 });
 
+test('独立成分: 2 つの離れた立方体を別成分として検出する', () => {
+  const a = cubePositions(10, 0, 0, 0);
+  const b = cubePositions(4, 20, 0, 6);
+  const pos = new Float32Array(a.length + b.length);
+  pos.set(a); pos.set(b, a.length);
+  const w = G.weldVertices(pos, 1e-5);
+  const components = G.analyzeComponents(pos, w);
+  assert.equal(components.length, 2);
+  assert.equal(components[0].triangleCount, 12);
+  assert.equal(components[1].triangleCount, 12);
+  assert.ok(Math.abs(components[0].localBounds.size[0] - 10) < 1e-5);
+  assert.ok(Math.abs(components[1].localBounds.size[2] - 4) < 1e-5);
+  assert.equal(components[1].triangleIndices.length, 12);
+});
+
 test('トポロジ: 三角形を 1 枚削ると境界エッジを検出する', () => {
   const full = cubePositions(10);
   const pos = full.slice(0, full.length - 9);

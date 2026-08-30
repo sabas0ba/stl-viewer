@@ -59,6 +59,17 @@ aside {
 #right { border-right: none; border-left: 1px solid var(--line); width: 306px; }
 
 #viewport { position: relative; flex: 1; min-width: 0; }
+#z-section-control {
+  position: absolute; right: 12px; bottom: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; background: rgba(20, 24, 31, .92);
+  border: 1px solid var(--line); border-radius: 5px;
+  color: var(--fg); font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+#z-section-control label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+#z-section-control input[type=range] { width: min(240px, 32vw); min-width: 120px; }
+#z-section-control .btn { white-space: nowrap; }
+#z-section-value { min-width: 62px; text-align: right; color: var(--fg-dim); font-size: 11px; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
@@ -79,6 +90,8 @@ button.btn.bar-toggle:focus-visible { outline: 2px solid var(--accent); outline-
 .dim-line { stroke: rgba(240,200,120,.85); stroke-width: 1; }
 .dim-ext { stroke: rgba(240,200,120,.35); stroke-width: 1; stroke-dasharray: 2 2; }
 .dim-label { fill: #f0c878; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.65); stroke-width: 3px; }
+.component-label { fill: #72d6ff; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.8); stroke-width: 3px; }
+.component-label.floating { fill: #ff7468; }
 .measure-label { fill: #7fd6ff; }
 
 .mode-hint {
@@ -136,6 +149,14 @@ input[type=color] { width: 22px; height: 18px; padding: 0; border: 1px solid var
 .panel-title:first-child { margin-top: 0; }
 .badge { background: var(--bg3); border-radius: 8px; padding: 0 7px; color: var(--fg); }
 .hint { color: var(--fg-dim); font-weight: 400; font-size: 11px; }
+.infill-info { line-height: 1.55; margin: -2px 0 8px 2px; }
+.shade-info { line-height: 1.5; margin: 8px 0 0; }
+.light-settings input[type=number] { width: 58px; }
+
+@media (max-width: 720px) {
+  #z-section-control { right: 8px; bottom: 8px; max-width: calc(100% - 16px); }
+  #z-section-control input[type=range] { width: 180px; }
+}
 
 .row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .row label { color: var(--fg-dim); font-size: 11px; }
@@ -150,6 +171,8 @@ table.kv td:last-child { text-align: right; font-family: var(--mono); }
 table.kv tr.warn td:last-child { color: var(--warn); }
 table.kv tr.ok td:last-child { color: var(--ok); }
 table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
+.component-select-button { min-width: 32px; padding: 2px 5px !important; font-size: 10px !important; font-family: var(--mono); }
+.component-select-button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {
@@ -256,11 +279,13 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
     </div>
     <div class="tb-group">
       <label class="tb-label">シェーディング</label>
-      <select id="sel-shade">
-        <option value="0">単色</option>
-        <option value="1">オーバーハング</option>
-        <option value="2">高さ</option>
-      </select>
+        <select id="sel-shade">
+          <option value="0">単色</option>
+          <option value="1">オーバーハング</option>
+          <option value="2">高さ</option>
+          <option value="3">ライト</option>
+          <option value="4" selected>AO 近似 + ライト</option>
+        </select>
     </div>
     <div class="tb-group right">
       <button class="btn" id="btn-fit">全体表示</button>
@@ -289,6 +314,13 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
     <div id="viewport">
       <canvas id="gl"></canvas>
       <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="z-section-control" class="viewport-control">
+        <label><input type="checkbox" id="chk-z-section"> Z 断面</label>
+        <input type="range" id="in-z-section" min="0" max="1" step="0.1" value="0.5" aria-label="Z 断面位置">
+        <span id="z-section-value" class="mono">-</span>
+        <button class="btn sm" id="btn-quick-xray" type="button">透過 + 成分色分け</button>
+        <button class="btn sm" id="btn-quick-xray-off" type="button">透過解除</button>
+      </div>
       <div id="mode-hint" class="mode-hint" hidden></div>
       <div id="busy" class="busy" hidden><span></span></div>
     </div>
@@ -310,6 +342,14 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <table class="kv" id="tbl-dims"></table>
         <div class="panel-title">品質</div>
         <table class="kv" id="tbl-quality"></table>
+        <div class="panel-title">独立パーツ</div>
+        <div class="row">
+          <select id="sel-component"><option value="">すべて表示</option></select>
+          <button class="btn sm" id="btn-component-all">すべて表示</button>
+          <button class="btn sm" id="btn-component-add">選択成分をパーツに追加</button>
+          <button class="btn sm" id="btn-component-export">選択成分を STL 保存</button>
+        </div>
+        <table class="kv" id="tbl-components"></table>
         <div class="panel-title">材料</div>
         <div class="row">
           <select id="sel-material"></select>
@@ -359,7 +399,29 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           <label><input type="checkbox" id="chk-bbox" checked> 外形ボックス</label>
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
+          <label><input type="checkbox" id="chk-components"> 独立パーツを図示</label>
+          <label><input type="checkbox" id="chk-component-colors"> 独立成分を色分け</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
+        </div>
+        <p class="hint shade-info">AO 近似は下面・凹部側の環境光を抑えて、細かい凹凸を見やすくします。物理的な遮蔽量ではありません。</p>
+        <div class="panel-title">ライト調整</div>
+        <div class="row light-settings">
+          <label>位置 X</label><input type="number" id="in-light-x" value="1" min="-5" max="5" step="0.1">
+          <label>Y</label><input type="number" id="in-light-y" value="-1" min="-5" max="5" step="0.1">
+          <label>Z</label><input type="number" id="in-light-z" value="1" min="-5" max="5" step="0.1">
+        </div>
+        <p class="hint shade-info">位置はモデル中心からの相対値です（外形半径 = 1）。位置が照明方向になります。</p>
+        <div class="row">
+          <label>ライト強度</label><input type="range" id="in-light-strength" min="0" max="2" step="0.05" value="1">
+          <span id="light-strength-val" class="mono">1.00</span>
+        </div>
+        <div class="row">
+          <label>環境光</label><input type="range" id="in-light-ambient" min="0" max="1" step="0.05" value="0.18">
+          <span id="light-ambient-val" class="mono">0.18</span>
+        </div>
+        <div class="row">
+          <label>AO 強度</label><input type="range" id="in-ao-strength" min="0" max="1" step="0.05" value="0.55">
+          <span id="ao-strength-val" class="mono">0.55</span>
         </div>
       </section>
 
@@ -442,6 +504,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
             <option value="gyroid">ジャイロイド (等方・自己支持)</option>
           </select>
         </div>
+        <div id="hollow-infill-info" class="infill-info hint"></div>
         <div class="row">
           <label>充填率</label><input type="number" id="in-hollow-density" value="15" min="1" max="90" step="1" style="width:64px"> %
           <label>リブ厚</label><input type="number" id="in-hollow-rib" value="1" min="0.1" step="0.1" style="width:64px"> mm
@@ -1200,6 +1263,51 @@ function analyzeTopology(index, vertexCount) {
     shells: roots.size,
     watertight: boundary === 0 && nonManifold === 0 && inconsistent === 0
   };
+}
+
+// STL 内の三角形を、頂点共有による連結成分へ分解する。
+function analyzeComponents(positions, welded) {
+  var w = welded || weldVertices(positions, Math.max(V3.len(computeBounds(positions).size) * 1e-6, 1e-5));
+  var triCount = positions.length / 9, parent = new Int32Array(triCount), first = new Int32Array(w.vertexCount);
+  for (var i = 0; i < triCount; i++) parent[i] = i;
+  for (i = 0; i < first.length; i++) first[i] = -1;
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  for (i = 0; i < triCount; i++) {
+    for (var v = 0; v < 3; v++) {
+      var vi = w.index[i * 3 + v];
+      if (first[vi] < 0) first[vi] = i; else union(i, first[vi]);
+    }
+  }
+  var byRoot = new Map(), out = [];
+  for (i = 0; i < triCount; i++) {
+    var root = find(i), c = byRoot.get(root);
+    if (!c) {
+      c = { triangleCount: 0, triangleIndices: [], volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      byRoot.set(root, c); out.push(c);
+    }
+    c.triangleCount++;
+    c.triangleIndices.push(i);
+    var p = i * 9;
+    var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
+    var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
+    var cx = positions[p + 6], cy = positions[p + 7], cz = positions[p + 8];
+    c.volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    var ex = bx - ax, ey = by - ay, ez = bz - az, fx = cx - ax, fy = cy - ay, fz = cz - az;
+    c.area += 0.5 * Math.sqrt(Math.pow(ey * fz - ez * fy, 2) + Math.pow(ez * fx - ex * fz, 2) + Math.pow(ex * fy - ey * fx, 2));
+    var pts = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+    for (v = 0; v < 3; v++) for (var k = 0; k < 3; k++) {
+      if (pts[v][k] < c.min[k]) c.min[k] = pts[v][k];
+      if (pts[v][k] > c.max[k]) c.max[k] = pts[v][k];
+    }
+  }
+  out.forEach(function (c, idx) {
+    c.id = idx + 1;
+    c.localBounds = { min: c.min, max: c.max, size: [c.max[0] - c.min[0], c.max[1] - c.min[1], c.max[2] - c.min[2]] };
+    c.volume = Math.abs(c.volume);
+    delete c.min; delete c.max;
+  });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2979,10 +3087,15 @@ var MESH_FS = [
   'uniform int uClipCount;',
   'uniform vec3 uColor;',
   'uniform float uOpacity;',
-  'uniform int uShadeMode;',   // 0: 単色, 1: オーバーハング, 2: 高さ
+  'uniform int uShadeMode;',   // 0: 単色, 1: オーバーハング, 2: 高さ, 3: ライト, 4: AO近似+ライト
   'uniform float uOverhangSin;',
   'uniform float uBedZ;',
   'uniform float uHeightMax;',
+  'uniform vec3 uLightPos;',
+  'uniform float uSceneRadius;',
+  'uniform float uLightStrength;',
+  'uniform float uAmbientStrength;',
+  'uniform float uAoStrength;',
   'uniform float uSelected;',
   'out vec4 fragColor;',
   'vec3 heatmap(float t){',
@@ -3010,12 +3123,24 @@ var MESH_FS = [
   '    base = heatmap((vWorld.z - uBedZ) / max(1e-3, uHeightMax));',
   '  }',
   '  if(!front) base *= 0.45;',
-  '  vec3 lightA = normalize(vec3(0.45, -0.75, 0.75));',
+  '  vec3 lightA = normalize(uLightPos - vWorld);',
   '  vec3 lightB = normalize(vec3(-0.6, 0.4, 0.35));',
   '  float dA = max(dot(n, lightA), 0.0);',
   '  float dB = max(dot(n, lightB), 0.0) * 0.35;',
   '  float amb = 0.34 + 0.16 * (n.z * 0.5 + 0.5);',
-  '  vec3 col = base * (amb + dA * 0.62 + dB);',
+  '  float light = amb + dA * 0.62 + dB;',
+  '  if(uShadeMode == 3 || uShadeMode == 4){',
+  '    float distanceAttenuation = 1.0 / (1.0 + 0.12 * length(uLightPos - vWorld) / max(uSceneRadius, 1e-3));',
+  '    light = uAmbientStrength + dA * 0.95 * distanceAttenuation + dB * 0.55;',
+  '    light *= uLightStrength;',
+  '    light += uAmbientStrength * 0.35;',
+  '  }',
+  '  if(uShadeMode == 4){',
+  '    // 深度テクスチャを使わない、下面・凹部側を強調する AO 近似',
+  '    float ambientOcclusion = 1.0 - uAoStrength * (1.0 - smoothstep(-0.35, 0.75, n.z));',
+  '    light *= ambientOcclusion;',
+  '  }',
+  '  vec3 col = base * light;',
   '  col = mix(col, vec3(1.0), uSelected * 0.12);',
   '  col = pow(col, vec3(0.4545));',
   '  fragColor = vec4(col, uOpacity);',
@@ -3271,6 +3396,7 @@ function createPart(name, positions, fileSize, format) {
     gpu: null,
     stats: null
   };
+  part.components = welded ? analyzeComponents(positions, welded) : [];
   updatePartMatrix(part);
   return part;
 }
@@ -3278,8 +3404,23 @@ function createPart(name, positions, fileSize, format) {
 function updatePartMatrix(part) {
   M4.compose(part.matrix, part.pos, part.quat, part.scale);
   part.worldBounds = computeWorldBounds(part);
+  if (part.components) part.components.forEach(function (c) {
+    c.worldBounds = transformedBounds(c.localBounds, part.matrix);
+    c.floating = c.worldBounds.min[2] > 0.2;
+  });
   part.stats = null;
   return part;
+}
+
+function componentPositions(part, component) {
+  if (component.positions) return component.positions;
+  var out = new Float32Array(component.triangleIndices.length * 9);
+  for (var i = 0; i < component.triangleIndices.length; i++) {
+    var src = component.triangleIndices[i] * 9;
+    for (var k = 0; k < 9; k++) out[i * 9 + k] = part.positions[src + k];
+  }
+  component.positions = out;
+  return out;
 }
 
 // 厳密なワールド AABB (回転後も正確な寸法を得るため全頂点を変換する)
@@ -3717,12 +3858,26 @@ function drawScene(app, vp, mats, sb) {
   gl.uniform1f(R.mesh.u.uOverhangSin, Math.sin(app.overhangDeg * Math.PI / 180));
   gl.uniform1f(R.mesh.u.uBedZ, 0);
   gl.uniform1f(R.mesh.u.uHeightMax, sb ? Math.max(sb.max[2], 1) : 1);
+  var lightCenter = sb ? [(sb.min[0] + sb.max[0]) / 2, (sb.min[1] + sb.max[1]) / 2, (sb.min[2] + sb.max[2]) / 2]
+    : [app.bed[0] / 2, app.bed[1] / 2, app.bed[2] / 2];
+  var lightRadius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  var lightPos = [
+    lightCenter[0] + app.light.position[0] * lightRadius,
+    lightCenter[1] + app.light.position[1] * lightRadius,
+    lightCenter[2] + app.light.position[2] * lightRadius
+  ];
+  gl.uniform3fv(R.mesh.u.uLightPos, lightPos);
+  gl.uniform1f(R.mesh.u.uSceneRadius, lightRadius);
+  gl.uniform1f(R.mesh.u.uLightStrength, app.light.strength);
+  gl.uniform1f(R.mesh.u.uAmbientStrength, app.light.ambient);
+  gl.uniform1f(R.mesh.u.uAoStrength, app.light.ao);
   gl.disable(gl.CULL_FACE);
   var transparent = [];
   var i;
   for (i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     var opacity = 1;
     if (app.ghostOthers && app.selection && part.id !== app.selection) opacity = 0.25;
     if (app.xray) opacity = Math.min(opacity, 0.35);
@@ -3778,7 +3933,29 @@ function drawScene(app, vp, mats, sb) {
     gl.drawArrays(gl.LINES, 0, R.auxBuf.count);
     gl.enable(gl.DEPTH_TEST);
   }
+  if (app.showComponents) drawComponentBoxes(app, mats);
   gl.bindVertexArray(null);
+}
+
+function drawComponentBoxes(app, mats) {
+  var R = app.R, gl = R.gl;
+  gl.useProgram(R.line.program);
+  gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+  gl.bindVertexArray(R.boxBuf.vao);
+  for (var i = 0; i < app.parts.length; i++) {
+    var part = app.parts[i];
+    if (!part.visible || !part.components || part.components.length < 2) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
+    for (var j = 0; j < part.components.length; j++) {
+      var c = part.components[j];
+      if (app.componentFocus && c.id !== app.componentFocus.componentId) continue;
+      var b = transformedBounds(c.localBounds, part.matrix);
+      R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
+      if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
+      else gl.uniform4f(R.line.u.uColor, 0.25, 0.75, 0.95, 1);
+      gl.drawArrays(gl.LINES, 0, R.boxBuf.count);
+    }
+  }
 }
 
 function pushCrossMarks(arr, p, s) {
@@ -3789,17 +3966,44 @@ function pushCrossMarks(arr, p, s) {
 
 function drawPart(app, part, mats, opacity) {
   var R = app.R, gl = R.gl;
-  var gpu = uploadPartGPU(R, part);
+  var focused = null;
+  if (app.componentFocus && app.componentFocus.partId === part.id) {
+    focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
+  }
+  var components = focused ? [focused] : (app.componentColors && part.components && part.components.length > 1 ? part.components : null);
+  if (!components) components = [null];
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
   gl.uniformMatrix4fv(R.mesh.u.uModel, false, part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uNormalMat, false, nrm);
-  gl.uniform3fv(R.mesh.u.uColor, part.color);
   gl.uniform1f(R.mesh.u.uOpacity, opacity);
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
-  gl.bindVertexArray(gpu.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  for (var i = 0; i < components.length; i++) {
+    var c = components[i], gpu = c ? uploadComponentGPU(R, part, c) : uploadPartGPU(R, part);
+    gl.uniform3fv(R.mesh.u.uColor, c ? componentColor(c) : part.color);
+    gl.bindVertexArray(gpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  }
+}
+
+function componentColor(component) {
+  var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
+  return colors[(component.id - 1) % colors.length];
+}
+
+function uploadComponentGPU(R, part, component) {
+  if (component.gpu) return component.gpu;
+  var positions = componentPositions(part, component), normals = buildFlatNormals(positions), gl = R.gl;
+  var vao = gl.createVertexArray(), pbo = gl.createBuffer(), nbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pbo); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo); gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  component.gpu = { vao: vao, pbo: pbo, nbo: nbo, count: positions.length / 3 };
+  return component.gpu;
 }
 
 // ステンシルで断面を塞ぐ (中空・肉厚の確認用)
@@ -3826,10 +4030,14 @@ function drawSectionCap(app, clipIndex, mats, sb) {
   var i;
   gl.cullFace(gl.FRONT);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
   gl.cullFace(gl.BACK);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
 
   gl.colorMask(true, true, true, true);
   gl.depthMask(true);
@@ -3924,6 +4132,21 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
         var mx = (pA[0] + pB[0]) / 2 / dpr, my = (pA[1] + pB[1]) / 2 / dpr;
         var d = V3.dist(app.measure.points[0], app.measure.points[1]);
         addLabel(svg, mx, my - 8, fmt(d, 3) + ' mm', 'dim-label measure-label');
+      }
+    }
+    if (app.showComponents) {
+      for (var pi = 0; pi < app.parts.length; pi++) {
+        var cp = app.parts[pi];
+        if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        if (app.componentFocus && cp.id !== app.componentFocus.partId) continue;
+        for (var ci = 0; ci < cp.components.length; ci++) {
+          if (app.componentFocus && cp.components[ci].id !== app.componentFocus.componentId) continue;
+          var cb = cp.components[ci].worldBounds;
+          var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
+          var cs = projectToScreen(o.mats.vp, rect, ch, center);
+          if (cs) addLabel(svg, cs[0] / dpr, cs[1] / dpr - 6, 'C' + cp.components[ci].id + (cp.components[ci].floating ? ' 浮遊' : ''),
+            'component-label' + (cp.components[ci].floating ? ' floating' : ''));
+        }
       }
     }
   }
@@ -4214,6 +4437,7 @@ function refreshPartList(app) {
     row.appendChild(vis);
     row.addEventListener('click', function () {
       app.selection = p.id;
+      app.componentFocus = null;
       refreshAll(app);
     });
     host.appendChild(row);
@@ -4274,6 +4498,8 @@ function updateMass(app) {
 function refreshQuality(app) {
   var t = $('#tbl-quality');
   t.innerHTML = '';
+  var ct = $('#tbl-components');
+  if (ct) ct.innerHTML = '';
   var p = selectedPart(app);
   if (!p) {
     t.appendChild(kvRow('-', 'パーツを選択してください'));
@@ -4285,12 +4511,63 @@ function refreshQuality(app) {
   t.appendChild(kvRow('頂点数 (統合後)', fmtInt(p.vertexCount)));
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
+  var components = p.components || [];
+  var cs = $('#sel-component');
+  if (cs) {
+    var selectedComponent = app.componentFocus && app.componentFocus.partId === p.id ? String(app.componentFocus.componentId) : '';
+    cs.innerHTML = '';
+    cs.appendChild(el('option', { value: '', text: 'すべて表示' }));
+    components.forEach(function (c) { cs.appendChild(el('option', { value: c.id, text: 'C' + c.id + (c.floating ? ' (浮遊)' : '') })); });
+    cs.value = selectedComponent;
+  }
+  var floating = components.filter(function (c) { return c.floating; }).length;
+  t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
+  t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));
   t.appendChild(kvRow('水密性', q.watertight ? '閉じている' : '開いている', q.watertight ? 'ok' : 'warn'));
   t.appendChild(kvRow('境界エッジ', fmtInt(q.boundaryEdges), q.boundaryEdges ? 'warn' : ''));
   t.appendChild(kvRow('非多様体エッジ', fmtInt(q.nonManifoldEdges), q.nonManifoldEdges ? 'warn' : ''));
   t.appendChild(kvRow('向き不整合エッジ', fmtInt(q.inconsistentEdges), q.inconsistentEdges ? 'warn' : ''));
   t.appendChild(kvRow('縮退三角形', fmtInt(q.degenerateTriangles), q.degenerateTriangles ? 'warn' : ''));
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
+  if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
+  components.forEach(function (c) {
+    var tr = el('tr', { class: c.floating ? 'warn' : '' });
+    var isFocused = app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id;
+    var select = el('button', { class: 'btn sm component-select-button' + (isFocused ? ' active' : ''), text: 'C' + c.id });
+    select.title = 'この成分だけを表示';
+    select.addEventListener('click', function () {
+      app.componentFocus = { partId: p.id, componentId: c.id };
+      refreshQuality(app); requestRender(app);
+    });
+    var idCell = el('td', {});
+    idCell.appendChild(select);
+    tr.appendChild(idCell);
+    tr.appendChild(el('td', { text: fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ') }));
+    ct.appendChild(tr);
+  });
+}
+
+function selectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) return null;
+  return (p.components || []).filter(function (c) { return c.id === focus.componentId; })[0] || null;
+}
+
+function addSelectedComponent(app) {
+  var p = selectedPart(app), c = selectedComponent(app);
+  if (!p || !c) { setStatus(app, '追加する成分を選択してください。'); return; }
+  addComponentPart(app, p, c);
+}
+
+function addComponentPart(app, source, component) {
+  var made = createPart(source.name + ' (C' + component.id + ')', componentPositions(source, component).slice(), 0, 'STL 成分');
+  made.color = componentColor(component).slice();
+  made.pos = source.pos.slice(); made.quat = source.quat.slice(); made.scale = source.scale.slice();
+  updatePartMatrix(made);
+  app.parts.push(made); app.selection = made.id; app.componentFocus = null;
+  refreshAll(app);
+  setStatus(app, made.name + ' をパーツとして追加しました。');
 }
 
 function refreshWarnings(app) {
@@ -4318,6 +4595,9 @@ function refreshWarnings(app) {
           : '面の向きが揃っていません');
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': ' + reason + '</span>');
     }
+    (p.components || []).forEach(function (c) {
+      if (c.floating) msgs.push('<span class="w">' + escapeHtml(p.name) + ': 独立成分 C' + c.id + ' が浮遊しています (最小 Z ' + fmt(c.worldBounds.min[2], 2) + ' mm)</span>');
+    });
     var thin = Math.min(b.size[0], b.size[1], b.size[2]);
     if (thin < 0.8) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 最小外形が ' + fmt(thin, 2) + ' mm (薄すぎる可能性)</span>');
@@ -4679,6 +4959,49 @@ function setupControls(app) {
   $('#btn-export').addEventListener('click', function () { exportSTL(app); });
   $('#btn-report').addEventListener('click', function () { exportReport(app); });
 
+  // --- ライト / AO ---
+  function updateLightControl() {
+    app.light.position[0] = clamp(parseFloat($('#in-light-x').value) || 0, -5, 5);
+    app.light.position[1] = clamp(parseFloat($('#in-light-y').value) || 0, -5, 5);
+    app.light.position[2] = clamp(parseFloat($('#in-light-z').value) || 0, -5, 5);
+    app.light.strength = clamp(parseFloat($('#in-light-strength').value) || 0, 0, 2);
+    app.light.ambient = clamp(parseFloat($('#in-light-ambient').value) || 0, 0, 1);
+    app.light.ao = clamp(parseFloat($('#in-ao-strength').value) || 0, 0, 1);
+    $('#light-strength-val').textContent = fmt(app.light.strength, 2);
+    $('#light-ambient-val').textContent = fmt(app.light.ambient, 2);
+    $('#ao-strength-val').textContent = fmt(app.light.ao, 2);
+    requestRender(app);
+  }
+  ['#in-light-x', '#in-light-y', '#in-light-z', '#in-light-strength', '#in-light-ambient', '#in-ao-strength']
+    .forEach(function (id) { $(id).addEventListener('input', updateLightControl); });
+  updateLightControl();
+
+  // --- View 内の Z 断面 ---
+  var zSectionCheck = $('#chk-z-section');
+  var zSectionRange = $('#in-z-section');
+  zSectionCheck.addEventListener('change', function () {
+    var clip = app.clips[2];
+    clip.enabled = zSectionCheck.checked;
+    if (clip.ui) clip.ui.chk.checked = clip.enabled;
+    if (clip.enabled) app.activeClip = 2;
+    else if (app.activeClip === 2) app.activeClip = firstEnabledClip(app);
+    syncSlice(app);
+  });
+  zSectionRange.addEventListener('input', function () {
+    var clip = app.clips[2];
+    clip.value = parseFloat(zSectionRange.value) || 0;
+    clip.enabled = true;
+    zSectionCheck.checked = true;
+    if (clip.ui) clip.ui.chk.checked = true;
+    app.activeClip = 2;
+    updateZSectionValue(app);
+    syncSlice(app);
+  });
+  zSectionRange.addEventListener('change', function () {
+    if (zSectionCheck.checked) app.activeClip = 2;
+    setClipValue(app, 2, app.clips[2].value);
+  });
+
   // --- タブ ---
   $$('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -4756,6 +5079,30 @@ function setupControls(app) {
   bindCheck('#chk-bbox', 'showBBox');
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
+  bindCheck('#chk-components', 'showComponents');
+  bindCheck('#chk-component-colors', 'componentColors');
+  $('#btn-quick-xray').addEventListener('click', function () {
+    app.xray = true; app.componentColors = true;
+    $('#chk-xray').checked = true; $('#chk-component-colors').checked = true;
+    requestRender(app);
+  });
+  $('#btn-quick-xray-off').addEventListener('click', function () {
+    app.xray = false; app.componentColors = false;
+    $('#chk-xray').checked = false; $('#chk-component-colors').checked = false;
+    requestRender(app);
+  });
+  $('#sel-component').addEventListener('change', function (ev) {
+    var p = selectedPart(app), id = parseInt(ev.target.value, 10);
+    app.componentFocus = p && id > 0 ? { partId: p.id, componentId: id } : null;
+    requestRender(app);
+  });
+  $('#btn-component-all').addEventListener('click', function () {
+    app.componentFocus = null;
+    $('#sel-component').value = '';
+    requestRender(app);
+  });
+  $('#btn-component-add').addEventListener('click', function () { addSelectedComponent(app); });
+  $('#btn-component-export').addEventListener('click', function () { exportSelectedComponent(app); });
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;
     requestRender(app);
@@ -5045,6 +5392,7 @@ function setClipValue(app, idx, v) {
     clip.ui.range.value = v;
     clip.ui.num.value = fmt(v, 2);
   }
+  if (idx === 2) updateZSectionValue(app);
   syncSlice(app);
 }
 
@@ -5065,6 +5413,7 @@ function clearClips(app) {
 // クリップ平面の状態から 3D 表示・断面輪郭・表・バッジをまとめて更新する。
 // 断面に関わる表示はすべてここを通し、状態が食い違わないようにする。
 function syncSlice(app) {
+  updateZSectionValue(app);
   if (currentClip(app)) {
     computeSlice(app);
   } else {
@@ -5154,7 +5503,11 @@ function buildClipControls(app) {
 
 function updateClipRanges(app) {
   var b = sceneBounds(app.parts, true);
-  if (!b) b = { min: [0, 0, 0], max: app.bed.slice() };
+  var hasSceneBounds = !!b;
+  if (!b) {
+    app.zClipInitialized = false;
+    b = { min: [0, 0, 0], max: app.bed.slice() };
+  }
   app.clips.forEach(function (clip, idx) {
     if (!clip.ui) return;
     var lo = b.min[idx], hi = b.max[idx];
@@ -5162,12 +5515,42 @@ function updateClipRanges(app) {
     clip.ui.range.min = lo;
     clip.ui.range.max = hi;
     clip.ui.range.step = Math.max((hi - lo) / 500, 0.01);
-    if (clip.value < lo || clip.value > hi) {
+    if (idx === 2 && hasSceneBounds && !app.zClipInitialized) {
+      clip.value = (lo + hi) / 2;
+      app.zClipInitialized = true;
+      clip.ui.range.value = clip.value;
+      clip.ui.num.value = fmt(clip.value, 2);
+    } else if (clip.value < lo || clip.value > hi) {
       clip.value = (lo + hi) / 2;
       clip.ui.range.value = clip.value;
       clip.ui.num.value = fmt(clip.value, 2);
     }
+    if (idx === 2) {
+      var zRange = $('#in-z-section');
+      if (zRange) {
+        zRange.min = lo; zRange.max = hi;
+        zRange.step = Math.max((hi - lo) / 500, 0.01);
+        zRange.value = clip.value;
+      }
+      updateZSectionValue(app);
+    }
   });
+}
+
+function updateZSectionValue(app) {
+  var out = $('#z-section-value');
+  if (!out) return;
+  var clip = app.clips[2];
+  out.textContent = fmt(clip.value, 1) + ' mm';
+  $('#chk-z-section').checked = clip.enabled;
+  var zRange = $('#in-z-section');
+  var b = sceneBounds(app.parts, true);
+  if (zRange && b && b.max[2] > b.min[2]) {
+    zRange.min = b.min[2];
+    zRange.max = b.max[2];
+    zRange.step = Math.max((b.max[2] - b.min[2]) / 500, 0.01);
+    zRange.value = clip.value;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -5400,6 +5783,17 @@ function exportSTL(app) {
   setStatus(app, name + ' を書き出しました (現在の位置・姿勢・倍率を反映)。');
 }
 
+function exportSelectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) { setStatus(app, '保存する成分を選択してください。'); return; }
+  var c = (p.components || []).filter(function (x) { return x.id === focus.componentId; })[0];
+  if (!c) { setStatus(app, '選択した成分が見つかりません。'); return; }
+  var buf = buildBinarySTL([{ positions: componentPositions(p, c), matrix: p.matrix }], 'stl-viewer component export');
+  var name = String(p.name).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 50) + '_C' + c.id + '.stl';
+  saveBlob(new Blob([buf], { type: 'model/stl' }), name);
+  setStatus(app, name + ' を書き出しました。');
+}
+
 function exportPNG(app) {
   renderFrame(app);
   app.R.canvas.toBlob(function (blob) {
@@ -5569,8 +5963,13 @@ function updateHollowPlan(app) {
   $('#hollow-target').textContent = p ? p.name : 'パーツ未選択';
   var t = $('#tbl-hollow-plan');
   t.innerHTML = '';
-  if (!p) { t.appendChild(kvRow('-', 'パーツを選択してください')); return; }
   var opt = hollowOptions(app);
+  if (!p) {
+    updateHollowInfillInfo(app, null, opt);
+    t.appendChild(kvRow('-', 'パーツを選択してください'));
+    return;
+  }
+  updateHollowInfillInfo(app, p, opt);
   var size = p.worldBounds.size;
   var h = chooseVoxelSize(size, {
     wall: opt.wall, top: opt.top, bottom: opt.bottom, rib: opt.rib,
@@ -5587,6 +5986,34 @@ function updateHollowPlan(app) {
   t.appendChild(kvRow('最小の壁', fmt(Math.min(opt.wall, opt.top, opt.bottom), 2) + ' mm / 押出 ' +
     fmt(Math.min(opt.wall, opt.top, opt.bottom) / opt.lineWidth, 1) + ' 本',
     Math.min(opt.wall, opt.top, opt.bottom) < opt.lineWidth * 2 ? 'warn' : 'ok'));
+}
+
+// 選択した内部構造を、現在の外形に対する周期と個数の概算で説明する。
+function updateHollowInfillInfo(app, part, opt) {
+  var host = $('#hollow-infill-info');
+  if (!host) return;
+  if (!part) {
+    host.textContent = 'パーツを選択すると、周期と構造数の概算を表示します。';
+    return;
+  }
+  var s = part.worldBounds.size;
+  if (opt.infill === 'none') {
+    host.textContent = 'なし: 内部リブ 0 本。壁・天面・底面だけを残した完全な中空です。';
+    return;
+  }
+  var period = infillPeriod(opt.infill, opt.rib, opt.density);
+  if (opt.infill === 'grid') {
+    var nx = Math.max(0, Math.floor(s[0] / period) + 1);
+    var ny = Math.max(0, Math.floor(s[1] / period) + 1);
+    host.textContent = '格子: 周期 約' + fmt(period, 1) + ' mm、X 方向の縦リブ 約' + nx +
+      ' 枚 + Y 方向 約' + ny + ' 枚 (概算)。';
+  } else {
+    var gx = Math.max(1, Math.ceil(s[0] / period));
+    var gy = Math.max(1, Math.ceil(s[1] / period));
+    var gz = Math.max(1, Math.ceil(s[2] / period));
+    host.textContent = 'ジャイロイド: 周期 約' + fmt(period, 1) + ' mm、' + gx + ' × ' + gy +
+      ' × ' + gz + ' = 約' + fmtInt(gx * gy * gz) + ' セル (概算)。';
+  }
 }
 
 function runHollow(app, part) {
@@ -5634,23 +6061,24 @@ function refreshHollowTable(app) {
     : '<span class="g">問題は検出されていません</span>';
 }
 
-// 中抜き結果を確認しやすいよう Y 平面で切って表示する
+// 中抜き結果を確認しやすいよう Z 平面で切って表示する
 function showHollowSection(app) {
   var p = selectedPart(app);
   if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
   var b = p.worldBounds;
-  var clip = app.clips[1];
+  var clip = app.clips[2];
   clip.enabled = true;
   clip.cap = true;
-  clip.value = (b.min[1] + b.max[1]) / 2;
+  clip.value = (b.min[2] + b.max[2]) / 2;
   if (clip.ui) {
     clip.ui.chk.checked = true;
     clip.ui.range.value = clip.value;
     clip.ui.num.value = fmt(clip.value, 2);
   }
   $('#chk-cap').checked = true;
-  setActiveClip(app, 1);
-  setStatus(app, 'Y 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
+  setActiveClip(app, 2);
+  updateZSectionValue(app);
+  setStatus(app, 'Z 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
 }
 
 // ===== 97_print.js =====
@@ -5849,10 +6277,14 @@ function createApp() {
     singleView: 'iso',
     orbitCam: makeOrbitCamera(),
     orthoCam: { center: [110, 110, 40], height: 300 },
-    shadeMode: 0,
+    shadeMode: 4,
+    light: { position: [1, -1, 1], strength: 1, ambient: 0.18, ao: 0.55 },
     showBed: true,
     showDims: true,
     showBBox: true,
+    showComponents: false,
+    componentColors: false,
+    componentFocus: null,
     ghostOthers: false,
     xray: false,
     overhangDeg: 45,
@@ -5861,6 +6293,7 @@ function createApp() {
       { axis: 1, enabled: false, value: 0, invert: false, cap: true },
       { axis: 2, enabled: false, value: 0, invert: false, cap: true }
     ],
+    zClipInitialized: false,
     // 断面輪郭・断面図面が参照するクリップ平面の番号 (-1 は断面なし)
     activeClip: -1,
     measure: { points: [] },
@@ -5898,7 +6331,7 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, filamentLength: filamentLength,
+    createPart: createPart, analyzeComponents: analyzeComponents, componentPositions: componentPositions, filamentLength: filamentLength,
     setActiveClip: setActiveClip, setClipValue: setClipValue,
     clearClips: clearClips, currentClip: currentClip
   };

@@ -128,6 +128,7 @@ function refreshPartList(app) {
     row.appendChild(vis);
     row.addEventListener('click', function () {
       app.selection = p.id;
+      app.componentFocus = null;
       refreshAll(app);
     });
     host.appendChild(row);
@@ -188,6 +189,8 @@ function updateMass(app) {
 function refreshQuality(app) {
   var t = $('#tbl-quality');
   t.innerHTML = '';
+  var ct = $('#tbl-components');
+  if (ct) ct.innerHTML = '';
   var p = selectedPart(app);
   if (!p) {
     t.appendChild(kvRow('-', 'パーツを選択してください'));
@@ -199,12 +202,63 @@ function refreshQuality(app) {
   t.appendChild(kvRow('頂点数 (統合後)', fmtInt(p.vertexCount)));
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
+  var components = p.components || [];
+  var cs = $('#sel-component');
+  if (cs) {
+    var selectedComponent = app.componentFocus && app.componentFocus.partId === p.id ? String(app.componentFocus.componentId) : '';
+    cs.innerHTML = '';
+    cs.appendChild(el('option', { value: '', text: 'すべて表示' }));
+    components.forEach(function (c) { cs.appendChild(el('option', { value: c.id, text: 'C' + c.id + (c.floating ? ' (浮遊)' : '') })); });
+    cs.value = selectedComponent;
+  }
+  var floating = components.filter(function (c) { return c.floating; }).length;
+  t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
+  t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));
   t.appendChild(kvRow('水密性', q.watertight ? '閉じている' : '開いている', q.watertight ? 'ok' : 'warn'));
   t.appendChild(kvRow('境界エッジ', fmtInt(q.boundaryEdges), q.boundaryEdges ? 'warn' : ''));
   t.appendChild(kvRow('非多様体エッジ', fmtInt(q.nonManifoldEdges), q.nonManifoldEdges ? 'warn' : ''));
   t.appendChild(kvRow('向き不整合エッジ', fmtInt(q.inconsistentEdges), q.inconsistentEdges ? 'warn' : ''));
   t.appendChild(kvRow('縮退三角形', fmtInt(q.degenerateTriangles), q.degenerateTriangles ? 'warn' : ''));
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
+  if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
+  components.forEach(function (c) {
+    var tr = el('tr', { class: c.floating ? 'warn' : '' });
+    var isFocused = app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id;
+    var select = el('button', { class: 'btn sm component-select-button' + (isFocused ? ' active' : ''), text: 'C' + c.id });
+    select.title = 'この成分だけを表示';
+    select.addEventListener('click', function () {
+      app.componentFocus = { partId: p.id, componentId: c.id };
+      refreshQuality(app); requestRender(app);
+    });
+    var idCell = el('td', {});
+    idCell.appendChild(select);
+    tr.appendChild(idCell);
+    tr.appendChild(el('td', { text: fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ') }));
+    ct.appendChild(tr);
+  });
+}
+
+function selectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) return null;
+  return (p.components || []).filter(function (c) { return c.id === focus.componentId; })[0] || null;
+}
+
+function addSelectedComponent(app) {
+  var p = selectedPart(app), c = selectedComponent(app);
+  if (!p || !c) { setStatus(app, '追加する成分を選択してください。'); return; }
+  addComponentPart(app, p, c);
+}
+
+function addComponentPart(app, source, component) {
+  var made = createPart(source.name + ' (C' + component.id + ')', componentPositions(source, component).slice(), 0, 'STL 成分');
+  made.color = componentColor(component).slice();
+  made.pos = source.pos.slice(); made.quat = source.quat.slice(); made.scale = source.scale.slice();
+  updatePartMatrix(made);
+  app.parts.push(made); app.selection = made.id; app.componentFocus = null;
+  refreshAll(app);
+  setStatus(app, made.name + ' をパーツとして追加しました。');
 }
 
 function refreshWarnings(app) {
@@ -232,6 +286,9 @@ function refreshWarnings(app) {
           : '面の向きが揃っていません');
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': ' + reason + '</span>');
     }
+    (p.components || []).forEach(function (c) {
+      if (c.floating) msgs.push('<span class="w">' + escapeHtml(p.name) + ': 独立成分 C' + c.id + ' が浮遊しています (最小 Z ' + fmt(c.worldBounds.min[2], 2) + ' mm)</span>');
+    });
     var thin = Math.min(b.size[0], b.size[1], b.size[2]);
     if (thin < 0.8) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 最小外形が ' + fmt(thin, 2) + ' mm (薄すぎる可能性)</span>');

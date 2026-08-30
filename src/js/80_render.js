@@ -239,12 +239,26 @@ function drawScene(app, vp, mats, sb) {
   gl.uniform1f(R.mesh.u.uOverhangSin, Math.sin(app.overhangDeg * Math.PI / 180));
   gl.uniform1f(R.mesh.u.uBedZ, 0);
   gl.uniform1f(R.mesh.u.uHeightMax, sb ? Math.max(sb.max[2], 1) : 1);
+  var lightCenter = sb ? [(sb.min[0] + sb.max[0]) / 2, (sb.min[1] + sb.max[1]) / 2, (sb.min[2] + sb.max[2]) / 2]
+    : [app.bed[0] / 2, app.bed[1] / 2, app.bed[2] / 2];
+  var lightRadius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  var lightPos = [
+    lightCenter[0] + app.light.position[0] * lightRadius,
+    lightCenter[1] + app.light.position[1] * lightRadius,
+    lightCenter[2] + app.light.position[2] * lightRadius
+  ];
+  gl.uniform3fv(R.mesh.u.uLightPos, lightPos);
+  gl.uniform1f(R.mesh.u.uSceneRadius, lightRadius);
+  gl.uniform1f(R.mesh.u.uLightStrength, app.light.strength);
+  gl.uniform1f(R.mesh.u.uAmbientStrength, app.light.ambient);
+  gl.uniform1f(R.mesh.u.uAoStrength, app.light.ao);
   gl.disable(gl.CULL_FACE);
   var transparent = [];
   var i;
   for (i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     var opacity = 1;
     if (app.ghostOthers && app.selection && part.id !== app.selection) opacity = 0.25;
     if (app.xray) opacity = Math.min(opacity, 0.35);
@@ -300,7 +314,29 @@ function drawScene(app, vp, mats, sb) {
     gl.drawArrays(gl.LINES, 0, R.auxBuf.count);
     gl.enable(gl.DEPTH_TEST);
   }
+  if (app.showComponents) drawComponentBoxes(app, mats);
   gl.bindVertexArray(null);
+}
+
+function drawComponentBoxes(app, mats) {
+  var R = app.R, gl = R.gl;
+  gl.useProgram(R.line.program);
+  gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+  gl.bindVertexArray(R.boxBuf.vao);
+  for (var i = 0; i < app.parts.length; i++) {
+    var part = app.parts[i];
+    if (!part.visible || !part.components || part.components.length < 2) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
+    for (var j = 0; j < part.components.length; j++) {
+      var c = part.components[j];
+      if (app.componentFocus && c.id !== app.componentFocus.componentId) continue;
+      var b = transformedBounds(c.localBounds, part.matrix);
+      R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
+      if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
+      else gl.uniform4f(R.line.u.uColor, 0.25, 0.75, 0.95, 1);
+      gl.drawArrays(gl.LINES, 0, R.boxBuf.count);
+    }
+  }
 }
 
 function pushCrossMarks(arr, p, s) {
@@ -311,17 +347,44 @@ function pushCrossMarks(arr, p, s) {
 
 function drawPart(app, part, mats, opacity) {
   var R = app.R, gl = R.gl;
-  var gpu = uploadPartGPU(R, part);
+  var focused = null;
+  if (app.componentFocus && app.componentFocus.partId === part.id) {
+    focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
+  }
+  var components = focused ? [focused] : (app.componentColors && part.components && part.components.length > 1 ? part.components : null);
+  if (!components) components = [null];
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
   gl.uniformMatrix4fv(R.mesh.u.uModel, false, part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uNormalMat, false, nrm);
-  gl.uniform3fv(R.mesh.u.uColor, part.color);
   gl.uniform1f(R.mesh.u.uOpacity, opacity);
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
-  gl.bindVertexArray(gpu.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  for (var i = 0; i < components.length; i++) {
+    var c = components[i], gpu = c ? uploadComponentGPU(R, part, c) : uploadPartGPU(R, part);
+    gl.uniform3fv(R.mesh.u.uColor, c ? componentColor(c) : part.color);
+    gl.bindVertexArray(gpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  }
+}
+
+function componentColor(component) {
+  var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
+  return colors[(component.id - 1) % colors.length];
+}
+
+function uploadComponentGPU(R, part, component) {
+  if (component.gpu) return component.gpu;
+  var positions = componentPositions(part, component), normals = buildFlatNormals(positions), gl = R.gl;
+  var vao = gl.createVertexArray(), pbo = gl.createBuffer(), nbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pbo); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo); gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  component.gpu = { vao: vao, pbo: pbo, nbo: nbo, count: positions.length / 3 };
+  return component.gpu;
 }
 
 // ステンシルで断面を塞ぐ (中空・肉厚の確認用)
@@ -348,10 +411,14 @@ function drawSectionCap(app, clipIndex, mats, sb) {
   var i;
   gl.cullFace(gl.FRONT);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
   gl.cullFace(gl.BACK);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
 
   gl.colorMask(true, true, true, true);
   gl.depthMask(true);
@@ -446,6 +513,21 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
         var mx = (pA[0] + pB[0]) / 2 / dpr, my = (pA[1] + pB[1]) / 2 / dpr;
         var d = V3.dist(app.measure.points[0], app.measure.points[1]);
         addLabel(svg, mx, my - 8, fmt(d, 3) + ' mm', 'dim-label measure-label');
+      }
+    }
+    if (app.showComponents) {
+      for (var pi = 0; pi < app.parts.length; pi++) {
+        var cp = app.parts[pi];
+        if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        if (app.componentFocus && cp.id !== app.componentFocus.partId) continue;
+        for (var ci = 0; ci < cp.components.length; ci++) {
+          if (app.componentFocus && cp.components[ci].id !== app.componentFocus.componentId) continue;
+          var cb = cp.components[ci].worldBounds;
+          var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
+          var cs = projectToScreen(o.mats.vp, rect, ch, center);
+          if (cs) addLabel(svg, cs[0] / dpr, cs[1] / dpr - 6, 'C' + cp.components[ci].id + (cp.components[ci].floating ? ' 浮遊' : ''),
+            'component-label' + (cp.components[ci].floating ? ' floating' : ''));
+        }
       }
     }
   }

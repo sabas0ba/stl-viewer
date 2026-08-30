@@ -56,6 +56,7 @@ function createPart(name, positions, fileSize, format) {
     gpu: null,
     stats: null
   };
+  part.components = welded ? analyzeComponents(positions, welded) : [];
   updatePartMatrix(part);
   return part;
 }
@@ -63,8 +64,23 @@ function createPart(name, positions, fileSize, format) {
 function updatePartMatrix(part) {
   M4.compose(part.matrix, part.pos, part.quat, part.scale);
   part.worldBounds = computeWorldBounds(part);
+  if (part.components) part.components.forEach(function (c) {
+    c.worldBounds = transformedBounds(c.localBounds, part.matrix);
+    c.floating = c.worldBounds.min[2] > 0.2;
+  });
   part.stats = null;
   return part;
+}
+
+function componentPositions(part, component) {
+  if (component.positions) return component.positions;
+  var out = new Float32Array(component.triangleIndices.length * 9);
+  for (var i = 0; i < component.triangleIndices.length; i++) {
+    var src = component.triangleIndices[i] * 9;
+    for (var k = 0; k < 9; k++) out[i * 9 + k] = part.positions[src + k];
+  }
+  component.positions = out;
+  return out;
 }
 
 // 厳密なワールド AABB (回転後も正確な寸法を得るため全頂点を変換する)
