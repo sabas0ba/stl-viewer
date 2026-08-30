@@ -188,6 +188,8 @@ function updateMass(app) {
 function refreshQuality(app) {
   var t = $('#tbl-quality');
   t.innerHTML = '';
+  var ct = $('#tbl-components');
+  if (ct) ct.innerHTML = '';
   var p = selectedPart(app);
   if (!p) {
     t.appendChild(kvRow('-', 'パーツを選択してください'));
@@ -199,12 +201,21 @@ function refreshQuality(app) {
   t.appendChild(kvRow('頂点数 (統合後)', fmtInt(p.vertexCount)));
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
+  var components = p.components || [];
+  var floating = components.filter(function (c) { return c.floating; }).length;
+  t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
+  t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));
   t.appendChild(kvRow('水密性', q.watertight ? '閉じている' : '開いている', q.watertight ? 'ok' : 'warn'));
   t.appendChild(kvRow('境界エッジ', fmtInt(q.boundaryEdges), q.boundaryEdges ? 'warn' : ''));
   t.appendChild(kvRow('非多様体エッジ', fmtInt(q.nonManifoldEdges), q.nonManifoldEdges ? 'warn' : ''));
   t.appendChild(kvRow('向き不整合エッジ', fmtInt(q.inconsistentEdges), q.inconsistentEdges ? 'warn' : ''));
   t.appendChild(kvRow('縮退三角形', fmtInt(q.degenerateTriangles), q.degenerateTriangles ? 'warn' : ''));
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
+  if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
+  components.forEach(function (c) {
+    ct.appendChild(kvRow('C' + c.id, fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊' : ' / 接地'), c.floating ? 'warn' : ''));
+  });
 }
 
 function refreshWarnings(app) {
@@ -232,6 +243,9 @@ function refreshWarnings(app) {
           : '面の向きが揃っていません');
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': ' + reason + '</span>');
     }
+    (p.components || []).forEach(function (c) {
+      if (c.floating) msgs.push('<span class="w">' + escapeHtml(p.name) + ': 独立成分 C' + c.id + ' が浮遊しています (最小 Z ' + fmt(c.worldBounds.min[2], 2) + ' mm)</span>');
+    });
     var thin = Math.min(b.size[0], b.size[1], b.size[2]);
     if (thin < 0.8) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 最小外形が ' + fmt(thin, 2) + ' mm (薄すぎる可能性)</span>');

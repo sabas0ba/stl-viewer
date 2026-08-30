@@ -89,6 +89,8 @@ button.btn.bar-toggle:focus-visible { outline: 2px solid var(--accent); outline-
 .dim-line { stroke: rgba(240,200,120,.85); stroke-width: 1; }
 .dim-ext { stroke: rgba(240,200,120,.35); stroke-width: 1; stroke-dasharray: 2 2; }
 .dim-label { fill: #f0c878; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.65); stroke-width: 3px; }
+.component-label { fill: #72d6ff; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.8); stroke-width: 3px; }
+.component-label.floating { fill: #ff7468; }
 .measure-label { fill: #7fd6ff; }
 
 .mode-hint {
@@ -335,6 +337,8 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <table class="kv" id="tbl-dims"></table>
         <div class="panel-title">品質</div>
         <table class="kv" id="tbl-quality"></table>
+        <div class="panel-title">独立パーツ</div>
+        <table class="kv" id="tbl-components"></table>
         <div class="panel-title">材料</div>
         <div class="row">
           <select id="sel-material"></select>
@@ -384,6 +388,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           <label><input type="checkbox" id="chk-bbox" checked> 外形ボックス</label>
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
+          <label><input type="checkbox" id="chk-components"> 独立パーツを図示</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
         </div>
         <p class="hint shade-info">AO 近似は下面・凹部側の環境光を抑えて、細かい凹凸を見やすくします。物理的な遮蔽量ではありません。</p>
@@ -1246,6 +1251,50 @@ function analyzeTopology(index, vertexCount) {
     shells: roots.size,
     watertight: boundary === 0 && nonManifold === 0 && inconsistent === 0
   };
+}
+
+// STL 内の三角形を、頂点共有による連結成分へ分解する。
+function analyzeComponents(positions, welded) {
+  var w = welded || weldVertices(positions, Math.max(V3.len(computeBounds(positions).size) * 1e-6, 1e-5));
+  var triCount = positions.length / 9, parent = new Int32Array(triCount), first = new Int32Array(w.vertexCount);
+  for (var i = 0; i < triCount; i++) parent[i] = i;
+  for (i = 0; i < first.length; i++) first[i] = -1;
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  for (i = 0; i < triCount; i++) {
+    for (var v = 0; v < 3; v++) {
+      var vi = w.index[i * 3 + v];
+      if (first[vi] < 0) first[vi] = i; else union(i, first[vi]);
+    }
+  }
+  var byRoot = new Map(), out = [];
+  for (i = 0; i < triCount; i++) {
+    var root = find(i), c = byRoot.get(root);
+    if (!c) {
+      c = { triangleCount: 0, volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      byRoot.set(root, c); out.push(c);
+    }
+    c.triangleCount++;
+    var p = i * 9;
+    var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
+    var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
+    var cx = positions[p + 6], cy = positions[p + 7], cz = positions[p + 8];
+    c.volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    var ex = bx - ax, ey = by - ay, ez = bz - az, fx = cx - ax, fy = cy - ay, fz = cz - az;
+    c.area += 0.5 * Math.sqrt(Math.pow(ey * fz - ez * fy, 2) + Math.pow(ez * fx - ex * fz, 2) + Math.pow(ex * fy - ey * fx, 2));
+    var pts = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+    for (v = 0; v < 3; v++) for (var k = 0; k < 3; k++) {
+      if (pts[v][k] < c.min[k]) c.min[k] = pts[v][k];
+      if (pts[v][k] > c.max[k]) c.max[k] = pts[v][k];
+    }
+  }
+  out.forEach(function (c, idx) {
+    c.id = idx + 1;
+    c.localBounds = { min: c.min, max: c.max, size: [c.max[0] - c.min[0], c.max[1] - c.min[1], c.max[2] - c.min[2]] };
+    c.volume = Math.abs(c.volume);
+    delete c.min; delete c.max;
+  });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -3334,6 +3383,7 @@ function createPart(name, positions, fileSize, format) {
     gpu: null,
     stats: null
   };
+  part.components = welded ? analyzeComponents(positions, welded) : [];
   updatePartMatrix(part);
   return part;
 }
@@ -3341,6 +3391,10 @@ function createPart(name, positions, fileSize, format) {
 function updatePartMatrix(part) {
   M4.compose(part.matrix, part.pos, part.quat, part.scale);
   part.worldBounds = computeWorldBounds(part);
+  if (part.components) part.components.forEach(function (c) {
+    c.worldBounds = transformedBounds(c.localBounds, part.matrix);
+    c.floating = c.worldBounds.min[2] > 0.2;
+  });
   part.stats = null;
   return part;
 }
@@ -3854,7 +3908,27 @@ function drawScene(app, vp, mats, sb) {
     gl.drawArrays(gl.LINES, 0, R.auxBuf.count);
     gl.enable(gl.DEPTH_TEST);
   }
+  if (app.showComponents) drawComponentBoxes(app, mats);
   gl.bindVertexArray(null);
+}
+
+function drawComponentBoxes(app, mats) {
+  var R = app.R, gl = R.gl;
+  gl.useProgram(R.line.program);
+  gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+  gl.bindVertexArray(R.boxBuf.vao);
+  for (var i = 0; i < app.parts.length; i++) {
+    var part = app.parts[i];
+    if (!part.visible || !part.components || part.components.length < 2) continue;
+    for (var j = 0; j < part.components.length; j++) {
+      var c = part.components[j];
+      var b = transformedBounds(c.localBounds, part.matrix);
+      R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
+      if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
+      else gl.uniform4f(R.line.u.uColor, 0.25, 0.75, 0.95, 1);
+      gl.drawArrays(gl.LINES, 0, R.boxBuf.count);
+    }
+  }
 }
 
 function pushCrossMarks(arr, p, s) {
@@ -4000,6 +4074,19 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
         var mx = (pA[0] + pB[0]) / 2 / dpr, my = (pA[1] + pB[1]) / 2 / dpr;
         var d = V3.dist(app.measure.points[0], app.measure.points[1]);
         addLabel(svg, mx, my - 8, fmt(d, 3) + ' mm', 'dim-label measure-label');
+      }
+    }
+    if (app.showComponents) {
+      for (var pi = 0; pi < app.parts.length; pi++) {
+        var cp = app.parts[pi];
+        if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        for (var ci = 0; ci < cp.components.length; ci++) {
+          var cb = cp.components[ci].worldBounds;
+          var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
+          var cs = projectToScreen(o.mats.vp, rect, ch, center);
+          if (cs) addLabel(svg, cs[0] / dpr, cs[1] / dpr - 6, 'C' + cp.components[ci].id + (cp.components[ci].floating ? ' 浮遊' : ''),
+            'component-label' + (cp.components[ci].floating ? ' floating' : ''));
+        }
       }
     }
   }
@@ -4350,6 +4437,8 @@ function updateMass(app) {
 function refreshQuality(app) {
   var t = $('#tbl-quality');
   t.innerHTML = '';
+  var ct = $('#tbl-components');
+  if (ct) ct.innerHTML = '';
   var p = selectedPart(app);
   if (!p) {
     t.appendChild(kvRow('-', 'パーツを選択してください'));
@@ -4361,12 +4450,21 @@ function refreshQuality(app) {
   t.appendChild(kvRow('頂点数 (統合後)', fmtInt(p.vertexCount)));
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
+  var components = p.components || [];
+  var floating = components.filter(function (c) { return c.floating; }).length;
+  t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
+  t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));
   t.appendChild(kvRow('水密性', q.watertight ? '閉じている' : '開いている', q.watertight ? 'ok' : 'warn'));
   t.appendChild(kvRow('境界エッジ', fmtInt(q.boundaryEdges), q.boundaryEdges ? 'warn' : ''));
   t.appendChild(kvRow('非多様体エッジ', fmtInt(q.nonManifoldEdges), q.nonManifoldEdges ? 'warn' : ''));
   t.appendChild(kvRow('向き不整合エッジ', fmtInt(q.inconsistentEdges), q.inconsistentEdges ? 'warn' : ''));
   t.appendChild(kvRow('縮退三角形', fmtInt(q.degenerateTriangles), q.degenerateTriangles ? 'warn' : ''));
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
+  if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
+  components.forEach(function (c) {
+    ct.appendChild(kvRow('C' + c.id, fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊' : ' / 接地'), c.floating ? 'warn' : ''));
+  });
 }
 
 function refreshWarnings(app) {
@@ -4394,6 +4492,9 @@ function refreshWarnings(app) {
           : '面の向きが揃っていません');
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': ' + reason + '</span>');
     }
+    (p.components || []).forEach(function (c) {
+      if (c.floating) msgs.push('<span class="w">' + escapeHtml(p.name) + ': 独立成分 C' + c.id + ' が浮遊しています (最小 Z ' + fmt(c.worldBounds.min[2], 2) + ' mm)</span>');
+    });
     var thin = Math.min(b.size[0], b.size[1], b.size[2]);
     if (thin < 0.8) {
       msgs.push('<span class="w">' + escapeHtml(p.name) + ': 最小外形が ' + fmt(thin, 2) + ' mm (薄すぎる可能性)</span>');
@@ -4876,6 +4977,7 @@ function setupControls(app) {
   bindCheck('#chk-bbox', 'showBBox');
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
+  bindCheck('#chk-components', 'showComponents');
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;
     requestRender(app);
@@ -6035,6 +6137,7 @@ function createApp() {
     showBed: true,
     showDims: true,
     showBBox: true,
+    showComponents: false,
     ghostOthers: false,
     xray: false,
     overhangDeg: 45,
@@ -6080,7 +6183,7 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, filamentLength: filamentLength,
+    createPart: createPart, analyzeComponents: analyzeComponents, filamentLength: filamentLength,
     setActiveClip: setActiveClip, setClipValue: setClipValue,
     clearClips: clearClips, currentClip: currentClip
   };

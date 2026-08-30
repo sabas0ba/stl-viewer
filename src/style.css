@@ -79,6 +79,8 @@ button.btn.bar-toggle:focus-visible { outline: 2px solid var(--accent); outline-
 .dim-line { stroke: rgba(240,200,120,.85); stroke-width: 1; }
 .dim-ext { stroke: rgba(240,200,120,.35); stroke-width: 1; stroke-dasharray: 2 2; }
 .dim-label { fill: #f0c878; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.65); stroke-width: 3px; }
+.component-label { fill: #72d6ff; font-size: 11px; font-family: var(--mono); paint-order: stroke; stroke: rgba(0,0,0,.8); stroke-width: 3px; }
+.component-label.floating { fill: #ff7468; }
 .measure-label { fill: #7fd6ff; }
 
 .mode-hint {

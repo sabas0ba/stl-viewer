@@ -199,6 +199,7 @@ function setupControls(app) {
   bindCheck('#chk-bbox', 'showBBox');
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
+  bindCheck('#chk-components', 'showComponents');
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;
     requestRender(app);

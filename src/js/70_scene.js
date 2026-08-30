@@ -56,6 +56,7 @@ function createPart(name, positions, fileSize, format) {
     gpu: null,
     stats: null
   };
+  part.components = welded ? analyzeComponents(positions, welded) : [];
   updatePartMatrix(part);
   return part;
 }
@@ -63,6 +64,10 @@ function createPart(name, positions, fileSize, format) {
 function updatePartMatrix(part) {
   M4.compose(part.matrix, part.pos, part.quat, part.scale);
   part.worldBounds = computeWorldBounds(part);
+  if (part.components) part.components.forEach(function (c) {
+    c.worldBounds = transformedBounds(c.localBounds, part.matrix);
+    c.floating = c.worldBounds.min[2] > 0.2;
+  });
   part.stats = null;
   return part;
 }

@@ -134,6 +134,50 @@ function analyzeTopology(index, vertexCount) {
   };
 }
 
+// STL 内の三角形を、頂点共有による連結成分へ分解する。
+function analyzeComponents(positions, welded) {
+  var w = welded || weldVertices(positions, Math.max(V3.len(computeBounds(positions).size) * 1e-6, 1e-5));
+  var triCount = positions.length / 9, parent = new Int32Array(triCount), first = new Int32Array(w.vertexCount);
+  for (var i = 0; i < triCount; i++) parent[i] = i;
+  for (i = 0; i < first.length; i++) first[i] = -1;
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  for (i = 0; i < triCount; i++) {
+    for (var v = 0; v < 3; v++) {
+      var vi = w.index[i * 3 + v];
+      if (first[vi] < 0) first[vi] = i; else union(i, first[vi]);
+    }
+  }
+  var byRoot = new Map(), out = [];
+  for (i = 0; i < triCount; i++) {
+    var root = find(i), c = byRoot.get(root);
+    if (!c) {
+      c = { triangleCount: 0, volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      byRoot.set(root, c); out.push(c);
+    }
+    c.triangleCount++;
+    var p = i * 9;
+    var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
+    var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
+    var cx = positions[p + 6], cy = positions[p + 7], cz = positions[p + 8];
+    c.volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    var ex = bx - ax, ey = by - ay, ez = bz - az, fx = cx - ax, fy = cy - ay, fz = cz - az;
+    c.area += 0.5 * Math.sqrt(Math.pow(ey * fz - ez * fy, 2) + Math.pow(ez * fx - ex * fz, 2) + Math.pow(ex * fy - ey * fx, 2));
+    var pts = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+    for (v = 0; v < 3; v++) for (var k = 0; k < 3; k++) {
+      if (pts[v][k] < c.min[k]) c.min[k] = pts[v][k];
+      if (pts[v][k] > c.max[k]) c.max[k] = pts[v][k];
+    }
+  }
+  out.forEach(function (c, idx) {
+    c.id = idx + 1;
+    c.localBounds = { min: c.min, max: c.max, size: [c.max[0] - c.min[0], c.max[1] - c.min[1], c.max[2] - c.min[2]] };
+    c.volume = Math.abs(c.volume);
+    delete c.min; delete c.max;
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // BVH (中央値分割)
 // ---------------------------------------------------------------------------

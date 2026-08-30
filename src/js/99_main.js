@@ -19,6 +19,7 @@ function createApp() {
     showBed: true,
     showDims: true,
     showBBox: true,
+    showComponents: false,
     ghostOthers: false,
     xray: false,
     overhangDeg: 45,
@@ -64,7 +65,7 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, filamentLength: filamentLength,
+    createPart: createPart, analyzeComponents: analyzeComponents, filamentLength: filamentLength,
     setActiveClip: setActiveClip, setClipValue: setClipValue,
     clearClips: clearClips, currentClip: currentClip
   };

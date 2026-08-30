@@ -313,7 +313,27 @@ function drawScene(app, vp, mats, sb) {
     gl.drawArrays(gl.LINES, 0, R.auxBuf.count);
     gl.enable(gl.DEPTH_TEST);
   }
+  if (app.showComponents) drawComponentBoxes(app, mats);
   gl.bindVertexArray(null);
+}
+
+function drawComponentBoxes(app, mats) {
+  var R = app.R, gl = R.gl;
+  gl.useProgram(R.line.program);
+  gl.uniformMatrix4fv(R.line.u.uMVP, false, mats.vp);
+  gl.bindVertexArray(R.boxBuf.vao);
+  for (var i = 0; i < app.parts.length; i++) {
+    var part = app.parts[i];
+    if (!part.visible || !part.components || part.components.length < 2) continue;
+    for (var j = 0; j < part.components.length; j++) {
+      var c = part.components[j];
+      var b = transformedBounds(c.localBounds, part.matrix);
+      R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
+      if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
+      else gl.uniform4f(R.line.u.uColor, 0.25, 0.75, 0.95, 1);
+      gl.drawArrays(gl.LINES, 0, R.boxBuf.count);
+    }
+  }
 }
 
 function pushCrossMarks(arr, p, s) {
@@ -459,6 +479,19 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
         var mx = (pA[0] + pB[0]) / 2 / dpr, my = (pA[1] + pB[1]) / 2 / dpr;
         var d = V3.dist(app.measure.points[0], app.measure.points[1]);
         addLabel(svg, mx, my - 8, fmt(d, 3) + ' mm', 'dim-label measure-label');
+      }
+    }
+    if (app.showComponents) {
+      for (var pi = 0; pi < app.parts.length; pi++) {
+        var cp = app.parts[pi];
+        if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        for (var ci = 0; ci < cp.components.length; ci++) {
+          var cb = cp.components[ci].worldBounds;
+          var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
+          var cs = projectToScreen(o.mats.vp, rect, ch, center);
+          if (cs) addLabel(svg, cs[0] / dpr, cs[1] / dpr - 6, 'C' + cp.components[ci].id + (cp.components[ci].floating ? ' 浮遊' : ''),
+            'component-label' + (cp.components[ci].floating ? ' floating' : ''));
+        }
       }
     }
   }
