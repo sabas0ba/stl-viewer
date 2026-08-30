@@ -351,17 +351,27 @@ function drawPart(app, part, mats, opacity) {
   if (app.componentFocus && app.componentFocus.partId === part.id) {
     focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
   }
-  var gpu = focused ? uploadComponentGPU(R, part, focused) : uploadPartGPU(R, part);
+  var components = focused ? [focused] : (app.componentColors && part.components && part.components.length > 1 ? part.components : null);
+  if (!components) components = [null];
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
   gl.uniformMatrix4fv(R.mesh.u.uModel, false, part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uNormalMat, false, nrm);
-  gl.uniform3fv(R.mesh.u.uColor, part.color);
   gl.uniform1f(R.mesh.u.uOpacity, opacity);
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
-  gl.bindVertexArray(gpu.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  for (var i = 0; i < components.length; i++) {
+    var c = components[i], gpu = c ? uploadComponentGPU(R, part, c) : uploadPartGPU(R, part);
+    gl.uniform3fv(R.mesh.u.uColor, c ? componentColor(c) : part.color);
+    gl.bindVertexArray(gpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  }
+}
+
+function componentColor(component) {
+  if (component.floating) return [0.95, 0.25, 0.20];
+  var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
+  return colors[(component.id - 1) % colors.length];
 }
 
 function uploadComponentGPU(R, part, component) {

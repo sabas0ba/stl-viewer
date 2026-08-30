@@ -58,6 +58,7 @@ aside {
 }
 #z-section-control label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 #z-section-control input[type=range] { width: min(240px, 32vw); min-width: 120px; }
+#z-section-control .btn { white-space: nowrap; }
 #z-section-value { min-width: 62px; text-align: right; color: var(--fg-dim); font-size: 11px; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -160,6 +161,7 @@ table.kv td:last-child { text-align: right; font-family: var(--mono); }
 table.kv tr.warn td:last-child { color: var(--warn); }
 table.kv tr.ok td:last-child { color: var(--ok); }
 table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
+.component-action { margin-left: 4px; padding: 2px 5px !important; font-size: 10px !important; }
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {

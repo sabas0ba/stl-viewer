@@ -20,6 +20,7 @@ function createApp() {
     showDims: true,
     showBBox: true,
     showComponents: false,
+    componentColors: false,
     componentFocus: null,
     ghostOthers: false,
     xray: false,

@@ -200,6 +200,17 @@ function setupControls(app) {
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
   bindCheck('#chk-components', 'showComponents');
+  bindCheck('#chk-component-colors', 'componentColors');
+  $('#btn-quick-xray').addEventListener('click', function () {
+    app.xray = true; app.componentColors = true;
+    $('#chk-xray').checked = true; $('#chk-component-colors').checked = true;
+    requestRender(app);
+  });
+  $('#btn-quick-xray-off').addEventListener('click', function () {
+    app.xray = false; app.componentColors = false;
+    $('#chk-xray').checked = false; $('#chk-component-colors').checked = false;
+    requestRender(app);
+  });
   $('#sel-component').addEventListener('change', function (ev) {
     var p = selectedPart(app), id = parseInt(ev.target.value, 10);
     app.componentFocus = p && id > 0 ? { partId: p.id, componentId: id } : null;

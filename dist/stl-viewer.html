@@ -68,6 +68,7 @@ aside {
 }
 #z-section-control label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 #z-section-control input[type=range] { width: min(240px, 32vw); min-width: 120px; }
+#z-section-control .btn { white-space: nowrap; }
 #z-section-value { min-width: 62px; text-align: right; color: var(--fg-dim); font-size: 11px; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -170,6 +171,7 @@ table.kv td:last-child { text-align: right; font-family: var(--mono); }
 table.kv tr.warn td:last-child { color: var(--warn); }
 table.kv tr.ok td:last-child { color: var(--ok); }
 table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
+.component-action { margin-left: 4px; padding: 2px 5px !important; font-size: 10px !important; }
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {
@@ -315,6 +317,8 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <label><input type="checkbox" id="chk-z-section"> Z 断面</label>
         <input type="range" id="in-z-section" min="0" max="1" step="0.1" value="0.5" aria-label="Z 断面位置">
         <span id="z-section-value" class="mono">-</span>
+        <button class="btn sm" id="btn-quick-xray" type="button">透過 + 成分色分け</button>
+        <button class="btn sm" id="btn-quick-xray-off" type="button">透過解除</button>
       </div>
       <div id="mode-hint" class="mode-hint" hidden></div>
       <div id="busy" class="busy" hidden><span></span></div>
@@ -394,6 +398,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
           <label><input type="checkbox" id="chk-components"> 独立パーツを図示</label>
+          <label><input type="checkbox" id="chk-component-colors"> 独立成分を色分け</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
         </div>
         <p class="hint shade-info">AO 近似は下面・凹部側の環境光を抑えて、細かい凹凸を見やすくします。物理的な遮蔽量ではありません。</p>
@@ -3963,17 +3968,27 @@ function drawPart(app, part, mats, opacity) {
   if (app.componentFocus && app.componentFocus.partId === part.id) {
     focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
   }
-  var gpu = focused ? uploadComponentGPU(R, part, focused) : uploadPartGPU(R, part);
+  var components = focused ? [focused] : (app.componentColors && part.components && part.components.length > 1 ? part.components : null);
+  if (!components) components = [null];
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
   gl.uniformMatrix4fv(R.mesh.u.uModel, false, part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uNormalMat, false, nrm);
-  gl.uniform3fv(R.mesh.u.uColor, part.color);
   gl.uniform1f(R.mesh.u.uOpacity, opacity);
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
-  gl.bindVertexArray(gpu.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  for (var i = 0; i < components.length; i++) {
+    var c = components[i], gpu = c ? uploadComponentGPU(R, part, c) : uploadPartGPU(R, part);
+    gl.uniform3fv(R.mesh.u.uColor, c ? componentColor(c) : part.color);
+    gl.bindVertexArray(gpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+  }
+}
+
+function componentColor(component) {
+  if (component.floating) return [0.95, 0.25, 0.20];
+  var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
+  return colors[(component.id - 1) % colors.length];
 }
 
 function uploadComponentGPU(R, part, component) {
@@ -4515,9 +4530,34 @@ function refreshQuality(app) {
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
   if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
   components.forEach(function (c) {
-    ct.appendChild(kvRow('C' + c.id, fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
-      (c.floating ? ' / 浮遊' : ' / 接地'), c.floating ? 'warn' : ''));
+    var tr = el('tr', { class: c.floating ? 'warn' : '' });
+    tr.appendChild(el('td', { text: 'C' + c.id }));
+    var info = el('td', {});
+    info.appendChild(document.createTextNode(fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ')));
+    var toggle = el('button', { class: 'btn sm component-action', text: app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id ? '解除' : '単一表示' });
+    toggle.addEventListener('click', function () {
+      if (app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id) {
+        app.componentFocus = null; cs.value = '';
+      } else {
+        app.componentFocus = { partId: p.id, componentId: c.id }; cs.value = String(c.id);
+      }
+      refreshQuality(app); requestRender(app);
+    });
+    var add = el('button', { class: 'btn sm component-action', text: 'パーツに追加' });
+    add.addEventListener('click', function () { addComponentPart(app, p, c); });
+    info.appendChild(toggle); info.appendChild(add); tr.appendChild(info); ct.appendChild(tr);
   });
+}
+
+function addComponentPart(app, source, component) {
+  var made = createPart(source.name + ' (C' + component.id + ')', componentPositions(source, component).slice(), 0, 'STL 成分');
+  made.color = componentColor(component).slice();
+  made.pos = source.pos.slice(); made.quat = source.quat.slice(); made.scale = source.scale.slice();
+  updatePartMatrix(made);
+  app.parts.push(made); app.selection = made.id; app.componentFocus = null;
+  refreshAll(app);
+  setStatus(app, made.name + ' をパーツとして追加しました。');
 }
 
 function refreshWarnings(app) {
@@ -5031,6 +5071,17 @@ function setupControls(app) {
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
   bindCheck('#chk-components', 'showComponents');
+  bindCheck('#chk-component-colors', 'componentColors');
+  $('#btn-quick-xray').addEventListener('click', function () {
+    app.xray = true; app.componentColors = true;
+    $('#chk-xray').checked = true; $('#chk-component-colors').checked = true;
+    requestRender(app);
+  });
+  $('#btn-quick-xray-off').addEventListener('click', function () {
+    app.xray = false; app.componentColors = false;
+    $('#chk-xray').checked = false; $('#chk-component-colors').checked = false;
+    requestRender(app);
+  });
   $('#sel-component').addEventListener('change', function (ev) {
     var p = selectedPart(app), id = parseInt(ev.target.value, 10);
     app.componentFocus = p && id > 0 ? { partId: p.id, componentId: id } : null;
@@ -6222,6 +6273,7 @@ function createApp() {
     showDims: true,
     showBBox: true,
     showComponents: false,
+    componentColors: false,
     componentFocus: null,
     ghostOthers: false,
     xray: false,

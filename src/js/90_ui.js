@@ -222,9 +222,34 @@ function refreshQuality(app) {
   if (p.normalsFlipped) t.appendChild(kvRow('法線', '内向きだったため反転', 'warn'));
   if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
   components.forEach(function (c) {
-    ct.appendChild(kvRow('C' + c.id, fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
-      (c.floating ? ' / 浮遊' : ' / 接地'), c.floating ? 'warn' : ''));
+    var tr = el('tr', { class: c.floating ? 'warn' : '' });
+    tr.appendChild(el('td', { text: 'C' + c.id }));
+    var info = el('td', {});
+    info.appendChild(document.createTextNode(fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ')));
+    var toggle = el('button', { class: 'btn sm component-action', text: app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id ? '解除' : '単一表示' });
+    toggle.addEventListener('click', function () {
+      if (app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id) {
+        app.componentFocus = null; cs.value = '';
+      } else {
+        app.componentFocus = { partId: p.id, componentId: c.id }; cs.value = String(c.id);
+      }
+      refreshQuality(app); requestRender(app);
+    });
+    var add = el('button', { class: 'btn sm component-action', text: 'パーツに追加' });
+    add.addEventListener('click', function () { addComponentPart(app, p, c); });
+    info.appendChild(toggle); info.appendChild(add); tr.appendChild(info); ct.appendChild(tr);
   });
+}
+
+function addComponentPart(app, source, component) {
+  var made = createPart(source.name + ' (C' + component.id + ')', componentPositions(source, component).slice(), 0, 'STL 成分');
+  made.color = componentColor(component).slice();
+  made.pos = source.pos.slice(); made.quat = source.quat.slice(); made.scale = source.scale.slice();
+  updatePartMatrix(made);
+  app.parts.push(made); app.selection = made.id; app.componentFocus = null;
+  refreshAll(app);
+  setStatus(app, made.name + ' をパーツとして追加しました。');
 }
 
 function refreshWarnings(app) {
