@@ -258,6 +258,7 @@ function drawScene(app, vp, mats, sb) {
   for (i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     var opacity = 1;
     if (app.ghostOthers && app.selection && part.id !== app.selection) opacity = 0.25;
     if (app.xray) opacity = Math.min(opacity, 0.35);
@@ -325,8 +326,10 @@ function drawComponentBoxes(app, mats) {
   for (var i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible || !part.components || part.components.length < 2) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     for (var j = 0; j < part.components.length; j++) {
       var c = part.components[j];
+      if (app.componentFocus && c.id !== app.componentFocus.componentId) continue;
       var b = transformedBounds(c.localBounds, part.matrix);
       R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
       if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
@@ -344,7 +347,11 @@ function pushCrossMarks(arr, p, s) {
 
 function drawPart(app, part, mats, opacity) {
   var R = app.R, gl = R.gl;
-  var gpu = uploadPartGPU(R, part);
+  var focused = null;
+  if (app.componentFocus && app.componentFocus.partId === part.id) {
+    focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
+  }
+  var gpu = focused ? uploadComponentGPU(R, part, focused) : uploadPartGPU(R, part);
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
@@ -355,6 +362,20 @@ function drawPart(app, part, mats, opacity) {
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
   gl.bindVertexArray(gpu.vao);
   gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+}
+
+function uploadComponentGPU(R, part, component) {
+  if (component.gpu) return component.gpu;
+  var positions = componentPositions(part, component), normals = buildFlatNormals(positions), gl = R.gl;
+  var vao = gl.createVertexArray(), pbo = gl.createBuffer(), nbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pbo); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo); gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  component.gpu = { vao: vao, pbo: pbo, nbo: nbo, count: positions.length / 3 };
+  return component.gpu;
 }
 
 // ステンシルで断面を塞ぐ (中空・肉厚の確認用)
@@ -381,10 +402,14 @@ function drawSectionCap(app, clipIndex, mats, sb) {
   var i;
   gl.cullFace(gl.FRONT);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
   gl.cullFace(gl.BACK);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
 
   gl.colorMask(true, true, true, true);
   gl.depthMask(true);
@@ -485,7 +510,9 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
       for (var pi = 0; pi < app.parts.length; pi++) {
         var cp = app.parts[pi];
         if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        if (app.componentFocus && cp.id !== app.componentFocus.partId) continue;
         for (var ci = 0; ci < cp.components.length; ci++) {
+          if (app.componentFocus && cp.components[ci].id !== app.componentFocus.componentId) continue;
           var cb = cp.components[ci].worldBounds;
           var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
           var cs = projectToScreen(o.mats.vp, rect, ch, center);

@@ -128,6 +128,7 @@ function refreshPartList(app) {
     row.appendChild(vis);
     row.addEventListener('click', function () {
       app.selection = p.id;
+      app.componentFocus = null;
       refreshAll(app);
     });
     host.appendChild(row);
@@ -202,6 +203,14 @@ function refreshQuality(app) {
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
   var components = p.components || [];
+  var cs = $('#sel-component');
+  if (cs) {
+    var selectedComponent = app.componentFocus && app.componentFocus.partId === p.id ? String(app.componentFocus.componentId) : '';
+    cs.innerHTML = '';
+    cs.appendChild(el('option', { value: '', text: 'すべて表示' }));
+    components.forEach(function (c) { cs.appendChild(el('option', { value: c.id, text: 'C' + c.id + (c.floating ? ' (浮遊)' : '') })); });
+    cs.value = selectedComponent;
+  }
   var floating = components.filter(function (c) { return c.floating; }).length;
   t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
   t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));

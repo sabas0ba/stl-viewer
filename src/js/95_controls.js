@@ -200,6 +200,17 @@ function setupControls(app) {
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
   bindCheck('#chk-components', 'showComponents');
+  $('#sel-component').addEventListener('change', function (ev) {
+    var p = selectedPart(app), id = parseInt(ev.target.value, 10);
+    app.componentFocus = p && id > 0 ? { partId: p.id, componentId: id } : null;
+    requestRender(app);
+  });
+  $('#btn-component-all').addEventListener('click', function () {
+    app.componentFocus = null;
+    $('#sel-component').value = '';
+    requestRender(app);
+  });
+  $('#btn-component-export').addEventListener('click', function () { exportSelectedComponent(app); });
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;
     requestRender(app);
@@ -878,6 +889,17 @@ function exportSTL(app) {
   var name = (p ? p.name : 'scene') + '_transformed.stl';
   saveBlob(new Blob([buf], { type: 'model/stl' }), name);
   setStatus(app, name + ' を書き出しました (現在の位置・姿勢・倍率を反映)。');
+}
+
+function exportSelectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) { setStatus(app, '保存する成分を選択してください。'); return; }
+  var c = (p.components || []).filter(function (x) { return x.id === focus.componentId; })[0];
+  if (!c) { setStatus(app, '選択した成分が見つかりません。'); return; }
+  var buf = buildBinarySTL([{ positions: componentPositions(p, c), matrix: p.matrix }], 'stl-viewer component export');
+  var name = String(p.name).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 50) + '_C' + c.id + '.stl';
+  saveBlob(new Blob([buf], { type: 'model/stl' }), name);
+  setStatus(app, name + ' を書き出しました。');
 }
 
 function exportPNG(app) {

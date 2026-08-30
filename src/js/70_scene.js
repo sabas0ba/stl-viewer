@@ -72,6 +72,17 @@ function updatePartMatrix(part) {
   return part;
 }
 
+function componentPositions(part, component) {
+  if (component.positions) return component.positions;
+  var out = new Float32Array(component.triangleIndices.length * 9);
+  for (var i = 0; i < component.triangleIndices.length; i++) {
+    var src = component.triangleIndices[i] * 9;
+    for (var k = 0; k < 9; k++) out[i * 9 + k] = part.positions[src + k];
+  }
+  component.positions = out;
+  return out;
+}
+
 // 厳密なワールド AABB (回転後も正確な寸法を得るため全頂点を変換する)
 function computeWorldBounds(part) {
   var m = part.matrix, p = part.positions;

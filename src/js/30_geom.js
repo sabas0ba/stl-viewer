@@ -152,10 +152,11 @@ function analyzeComponents(positions, welded) {
   for (i = 0; i < triCount; i++) {
     var root = find(i), c = byRoot.get(root);
     if (!c) {
-      c = { triangleCount: 0, volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      c = { triangleCount: 0, triangleIndices: [], volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
       byRoot.set(root, c); out.push(c);
     }
     c.triangleCount++;
+    c.triangleIndices.push(i);
     var p = i * 9;
     var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
     var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];

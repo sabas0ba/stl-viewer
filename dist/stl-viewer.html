@@ -338,6 +338,11 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <div class="panel-title">品質</div>
         <table class="kv" id="tbl-quality"></table>
         <div class="panel-title">独立パーツ</div>
+        <div class="row">
+          <select id="sel-component"><option value="">すべて表示</option></select>
+          <button class="btn sm" id="btn-component-all">すべて表示</button>
+          <button class="btn sm" id="btn-component-export">選択成分を STL 保存</button>
+        </div>
         <table class="kv" id="tbl-components"></table>
         <div class="panel-title">材料</div>
         <div class="row">
@@ -1271,10 +1276,11 @@ function analyzeComponents(positions, welded) {
   for (i = 0; i < triCount; i++) {
     var root = find(i), c = byRoot.get(root);
     if (!c) {
-      c = { triangleCount: 0, volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      c = { triangleCount: 0, triangleIndices: [], volume: 0, area: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
       byRoot.set(root, c); out.push(c);
     }
     c.triangleCount++;
+    c.triangleIndices.push(i);
     var p = i * 9;
     var ax = positions[p], ay = positions[p + 1], az = positions[p + 2];
     var bx = positions[p + 3], by = positions[p + 4], bz = positions[p + 5];
@@ -3399,6 +3405,17 @@ function updatePartMatrix(part) {
   return part;
 }
 
+function componentPositions(part, component) {
+  if (component.positions) return component.positions;
+  var out = new Float32Array(component.triangleIndices.length * 9);
+  for (var i = 0; i < component.triangleIndices.length; i++) {
+    var src = component.triangleIndices[i] * 9;
+    for (var k = 0; k < 9; k++) out[i * 9 + k] = part.positions[src + k];
+  }
+  component.positions = out;
+  return out;
+}
+
 // 厳密なワールド AABB (回転後も正確な寸法を得るため全頂点を変換する)
 function computeWorldBounds(part) {
   var m = part.matrix, p = part.positions;
@@ -3853,6 +3870,7 @@ function drawScene(app, vp, mats, sb) {
   for (i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     var opacity = 1;
     if (app.ghostOthers && app.selection && part.id !== app.selection) opacity = 0.25;
     if (app.xray) opacity = Math.min(opacity, 0.35);
@@ -3920,8 +3938,10 @@ function drawComponentBoxes(app, mats) {
   for (var i = 0; i < app.parts.length; i++) {
     var part = app.parts[i];
     if (!part.visible || !part.components || part.components.length < 2) continue;
+    if (app.componentFocus && part.id !== app.componentFocus.partId) continue;
     for (var j = 0; j < part.components.length; j++) {
       var c = part.components[j];
+      if (app.componentFocus && c.id !== app.componentFocus.componentId) continue;
       var b = transformedBounds(c.localBounds, part.matrix);
       R.boxBuf.upload(new Float32Array(buildBoxLines(b.min, b.max)));
       if (c.floating) gl.uniform4f(R.line.u.uColor, 0.95, 0.25, 0.20, 1);
@@ -3939,7 +3959,11 @@ function pushCrossMarks(arr, p, s) {
 
 function drawPart(app, part, mats, opacity) {
   var R = app.R, gl = R.gl;
-  var gpu = uploadPartGPU(R, part);
+  var focused = null;
+  if (app.componentFocus && app.componentFocus.partId === part.id) {
+    focused = (part.components || []).filter(function (c) { return c.id === app.componentFocus.componentId; })[0] || null;
+  }
+  var gpu = focused ? uploadComponentGPU(R, part, focused) : uploadPartGPU(R, part);
   var mvp = M4.mul(M4.create(), mats.vp, part.matrix);
   var nrm = M4.normalMatrix(M4.create(), part.matrix);
   gl.uniformMatrix4fv(R.mesh.u.uMVP, false, mvp);
@@ -3950,6 +3974,20 @@ function drawPart(app, part, mats, opacity) {
   gl.uniform1f(R.mesh.u.uSelected, app.selection === part.id ? 1 : 0);
   gl.bindVertexArray(gpu.vao);
   gl.drawArrays(gl.TRIANGLES, 0, gpu.count);
+}
+
+function uploadComponentGPU(R, part, component) {
+  if (component.gpu) return component.gpu;
+  var positions = componentPositions(part, component), normals = buildFlatNormals(positions), gl = R.gl;
+  var vao = gl.createVertexArray(), pbo = gl.createBuffer(), nbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pbo); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo); gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+  component.gpu = { vao: vao, pbo: pbo, nbo: nbo, count: positions.length / 3 };
+  return component.gpu;
 }
 
 // ステンシルで断面を塞ぐ (中空・肉厚の確認用)
@@ -3976,10 +4014,14 @@ function drawSectionCap(app, clipIndex, mats, sb) {
   var i;
   gl.cullFace(gl.FRONT);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
   gl.cullFace(gl.BACK);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.DECR_WRAP);
-  for (i = 0; i < app.parts.length; i++) if (app.parts[i].visible) drawPart(app, app.parts[i], mats, 1);
+  for (i = 0; i < app.parts.length; i++) {
+    if (app.parts[i].visible && (!app.componentFocus || app.parts[i].id === app.componentFocus.partId)) drawPart(app, app.parts[i], mats, 1);
+  }
 
   gl.colorMask(true, true, true, true);
   gl.depthMask(true);
@@ -4080,7 +4122,9 @@ function updateOverlay(app, overlays, cw, ch, dpr, sb) {
       for (var pi = 0; pi < app.parts.length; pi++) {
         var cp = app.parts[pi];
         if (!cp.visible || !cp.components || cp.components.length < 2) continue;
+        if (app.componentFocus && cp.id !== app.componentFocus.partId) continue;
         for (var ci = 0; ci < cp.components.length; ci++) {
+          if (app.componentFocus && cp.components[ci].id !== app.componentFocus.componentId) continue;
           var cb = cp.components[ci].worldBounds;
           var center = [(cb.min[0] + cb.max[0]) / 2, (cb.min[1] + cb.max[1]) / 2, (cb.min[2] + cb.max[2]) / 2];
           var cs = projectToScreen(o.mats.vp, rect, ch, center);
@@ -4377,6 +4421,7 @@ function refreshPartList(app) {
     row.appendChild(vis);
     row.addEventListener('click', function () {
       app.selection = p.id;
+      app.componentFocus = null;
       refreshAll(app);
     });
     host.appendChild(row);
@@ -4451,6 +4496,14 @@ function refreshQuality(app) {
   if (!q) { t.appendChild(kvRow('トポロジ', '解析できませんでした')); return; }
   t.appendChild(kvRow('シェル数', fmtInt(q.shells), q.shells > 1 ? 'warn' : ''));
   var components = p.components || [];
+  var cs = $('#sel-component');
+  if (cs) {
+    var selectedComponent = app.componentFocus && app.componentFocus.partId === p.id ? String(app.componentFocus.componentId) : '';
+    cs.innerHTML = '';
+    cs.appendChild(el('option', { value: '', text: 'すべて表示' }));
+    components.forEach(function (c) { cs.appendChild(el('option', { value: c.id, text: 'C' + c.id + (c.floating ? ' (浮遊)' : '') })); });
+    cs.value = selectedComponent;
+  }
   var floating = components.filter(function (c) { return c.floating; }).length;
   t.appendChild(kvRow('独立成分数', fmtInt(components.length), components.length > 1 ? 'warn' : ''));
   t.appendChild(kvRow('浮遊成分数', fmtInt(floating), floating ? 'warn' : 'ok'));
@@ -4978,6 +5031,17 @@ function setupControls(app) {
   bindCheck('#chk-ghost', 'ghostOthers');
   bindCheck('#chk-xray', 'xray');
   bindCheck('#chk-components', 'showComponents');
+  $('#sel-component').addEventListener('change', function (ev) {
+    var p = selectedPart(app), id = parseInt(ev.target.value, 10);
+    app.componentFocus = p && id > 0 ? { partId: p.id, componentId: id } : null;
+    requestRender(app);
+  });
+  $('#btn-component-all').addEventListener('click', function () {
+    app.componentFocus = null;
+    $('#sel-component').value = '';
+    requestRender(app);
+  });
+  $('#btn-component-export').addEventListener('click', function () { exportSelectedComponent(app); });
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;
     requestRender(app);
@@ -5658,6 +5722,17 @@ function exportSTL(app) {
   setStatus(app, name + ' を書き出しました (現在の位置・姿勢・倍率を反映)。');
 }
 
+function exportSelectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) { setStatus(app, '保存する成分を選択してください。'); return; }
+  var c = (p.components || []).filter(function (x) { return x.id === focus.componentId; })[0];
+  if (!c) { setStatus(app, '選択した成分が見つかりません。'); return; }
+  var buf = buildBinarySTL([{ positions: componentPositions(p, c), matrix: p.matrix }], 'stl-viewer component export');
+  var name = String(p.name).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 50) + '_C' + c.id + '.stl';
+  saveBlob(new Blob([buf], { type: 'model/stl' }), name);
+  setStatus(app, name + ' を書き出しました。');
+}
+
 function exportPNG(app) {
   renderFrame(app);
   app.R.canvas.toBlob(function (blob) {
@@ -6147,6 +6222,7 @@ function createApp() {
     showDims: true,
     showBBox: true,
     showComponents: false,
+    componentFocus: null,
     ghostOthers: false,
     xray: false,
     overhangDeg: 45,
@@ -6193,7 +6269,7 @@ function main() {
     applyBedChange: applyBedChange, syncBedInputs: syncBedInputs,
     hollowMesh: hollowMesh, hollowDefaults: hollowDefaults, hollowOptions: hollowOptions,
     surfaceNets: surfaceNets, chooseVoxelSize: chooseVoxelSize, infillPeriod: infillPeriod,
-    createPart: createPart, analyzeComponents: analyzeComponents, filamentLength: filamentLength,
+    createPart: createPart, analyzeComponents: analyzeComponents, componentPositions: componentPositions, filamentLength: filamentLength,
     setActiveClip: setActiveClip, setClipValue: setClipValue,
     clearClips: clearClips, currentClip: currentClip
   };
