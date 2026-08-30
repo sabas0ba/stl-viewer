@@ -109,13 +109,12 @@ function setupControls(app) {
   zSectionRange.addEventListener('input', function () {
     var clip = app.clips[2];
     clip.value = parseFloat(zSectionRange.value) || 0;
+    clip.enabled = true;
+    zSectionCheck.checked = true;
+    if (clip.ui) clip.ui.chk.checked = true;
+    app.activeClip = 2;
     updateZSectionValue(app);
-    if (zSectionCheck.checked) {
-      app.activeClip = 2;
-      requestRender(app);
-      updateClipBadge(app);
-      updateSliceSource(app);
-    }
+    syncSlice(app);
   });
   zSectionRange.addEventListener('change', function () {
     if (zSectionCheck.checked) app.activeClip = 2;

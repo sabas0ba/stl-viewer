@@ -3988,7 +3988,6 @@ function drawPart(app, part, mats, opacity) {
 }
 
 function componentColor(component) {
-  if (component.floating) return [0.95, 0.25, 0.20];
   var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
   return colors[(component.id - 1) % colors.length];
 }
@@ -4991,13 +4990,12 @@ function setupControls(app) {
   zSectionRange.addEventListener('input', function () {
     var clip = app.clips[2];
     clip.value = parseFloat(zSectionRange.value) || 0;
+    clip.enabled = true;
+    zSectionCheck.checked = true;
+    if (clip.ui) clip.ui.chk.checked = true;
+    app.activeClip = 2;
     updateZSectionValue(app);
-    if (zSectionCheck.checked) {
-      app.activeClip = 2;
-      requestRender(app);
-      updateClipBadge(app);
-      updateSliceSource(app);
-    }
+    syncSlice(app);
   });
   zSectionRange.addEventListener('change', function () {
     if (zSectionCheck.checked) app.activeClip = 2;

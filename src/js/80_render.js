@@ -369,7 +369,6 @@ function drawPart(app, part, mats, opacity) {
 }
 
 function componentColor(component) {
-  if (component.floating) return [0.95, 0.25, 0.20];
   var colors = [[0.25, 0.75, 0.95], [0.55, 0.85, 0.35], [0.95, 0.70, 0.25], [0.75, 0.45, 0.95], [0.30, 0.90, 0.75]];
   return colors[(component.id - 1) % colors.length];
 }
