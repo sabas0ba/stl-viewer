@@ -99,7 +99,8 @@ test('独立成分: 2 つの離れた立方体を別成分として検出する'
   const w = G.weldVertices(pos, 1e-5);
   const components = G.analyzeComponents(pos, w);
   assert.equal(components.length, 2);
-  assert.deepEqual(components.map((c) => c.triangleCount), [12, 12]);
+  assert.equal(components[0].triangleCount, 12);
+  assert.equal(components[1].triangleCount, 12);
   assert.ok(Math.abs(components[0].localBounds.size[0] - 10) < 1e-5);
   assert.ok(Math.abs(components[1].localBounds.size[2] - 4) < 1e-5);
   assert.equal(components[1].triangleIndices.length, 12);
