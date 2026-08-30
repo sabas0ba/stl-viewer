@@ -239,6 +239,19 @@ function drawScene(app, vp, mats, sb) {
   gl.uniform1f(R.mesh.u.uOverhangSin, Math.sin(app.overhangDeg * Math.PI / 180));
   gl.uniform1f(R.mesh.u.uBedZ, 0);
   gl.uniform1f(R.mesh.u.uHeightMax, sb ? Math.max(sb.max[2], 1) : 1);
+  var lightCenter = sb ? [(sb.min[0] + sb.max[0]) / 2, (sb.min[1] + sb.max[1]) / 2, (sb.min[2] + sb.max[2]) / 2]
+    : [app.bed[0] / 2, app.bed[1] / 2, app.bed[2] / 2];
+  var lightRadius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  var lightPos = [
+    lightCenter[0] + app.light.position[0] * lightRadius,
+    lightCenter[1] + app.light.position[1] * lightRadius,
+    lightCenter[2] + app.light.position[2] * lightRadius
+  ];
+  gl.uniform3fv(R.mesh.u.uLightPos, lightPos);
+  gl.uniform1f(R.mesh.u.uSceneRadius, lightRadius);
+  gl.uniform1f(R.mesh.u.uLightStrength, app.light.strength);
+  gl.uniform1f(R.mesh.u.uAmbientStrength, app.light.ambient);
+  gl.uniform1f(R.mesh.u.uAoStrength, app.light.ao);
   gl.disable(gl.CULL_FACE);
   var transparent = [];
   var i;

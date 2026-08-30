@@ -545,16 +545,16 @@ check('結果表に削減量と断面二次モーメント比が出る',
 await page.click('#btn-hollow-section');
 await page.waitForTimeout(300);
 const clipState = await page.evaluate(() => {
-  const c = window.__stlViewer.app.clips[1];
+  const c = window.__stlViewer.app.clips[2];
   return { enabled: c.enabled, value: c.value };
 });
-check('断面表示で Y 平面のクリップが有効になる', clipState.enabled === true, JSON.stringify(clipState));
+check('断面表示で Z 平面のクリップが有効になる', clipState.enabled === true, JSON.stringify(clipState));
 const hollowSliceLink = await page.evaluate(() => {
   const a = window.__stlViewer.app;
   return { active: a.activeClip, axis: a.slice && a.slice.axis };
 });
 check('中抜きの断面表示が断面輪郭の参照元にもなる',
-  hollowSliceLink.active === 1 && hollowSliceLink.axis === 1, JSON.stringify(hollowSliceLink));
+  hollowSliceLink.active === 2 && hollowSliceLink.axis === 2, JSON.stringify(hollowSliceLink));
 await page.screenshot({ path: join(shots, '10-hollow.png') });
 
 // 全体再構築 + 抜き穴

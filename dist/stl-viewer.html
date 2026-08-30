@@ -59,6 +59,16 @@ aside {
 #right { border-right: none; border-left: 1px solid var(--line); width: 306px; }
 
 #viewport { position: relative; flex: 1; min-width: 0; }
+#z-section-control {
+  position: absolute; right: 12px; bottom: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; background: rgba(20, 24, 31, .92);
+  border: 1px solid var(--line); border-radius: 5px;
+  color: var(--fg); font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+#z-section-control label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+#z-section-control input[type=range] { width: min(240px, 32vw); min-width: 120px; }
+#z-section-value { min-width: 62px; text-align: right; color: var(--fg-dim); font-size: 11px; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
@@ -136,6 +146,14 @@ input[type=color] { width: 22px; height: 18px; padding: 0; border: 1px solid var
 .panel-title:first-child { margin-top: 0; }
 .badge { background: var(--bg3); border-radius: 8px; padding: 0 7px; color: var(--fg); }
 .hint { color: var(--fg-dim); font-weight: 400; font-size: 11px; }
+.infill-info { line-height: 1.55; margin: -2px 0 8px 2px; }
+.shade-info { line-height: 1.5; margin: 8px 0 0; }
+.light-settings input[type=number] { width: 58px; }
+
+@media (max-width: 720px) {
+  #z-section-control { right: 8px; bottom: 8px; max-width: calc(100% - 16px); }
+  #z-section-control input[type=range] { width: 180px; }
+}
 
 .row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .row label { color: var(--fg-dim); font-size: 11px; }
@@ -256,11 +274,13 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
     </div>
     <div class="tb-group">
       <label class="tb-label">シェーディング</label>
-      <select id="sel-shade">
-        <option value="0">単色</option>
-        <option value="1">オーバーハング</option>
-        <option value="2">高さ</option>
-      </select>
+        <select id="sel-shade">
+          <option value="0">単色</option>
+          <option value="1">オーバーハング</option>
+          <option value="2">高さ</option>
+          <option value="3">ライト</option>
+          <option value="4" selected>AO 近似 + ライト</option>
+        </select>
     </div>
     <div class="tb-group right">
       <button class="btn" id="btn-fit">全体表示</button>
@@ -289,6 +309,11 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
     <div id="viewport">
       <canvas id="gl"></canvas>
       <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="z-section-control" class="viewport-control">
+        <label><input type="checkbox" id="chk-z-section"> Z 断面</label>
+        <input type="range" id="in-z-section" min="0" max="1" step="0.1" value="0.5" aria-label="Z 断面位置">
+        <span id="z-section-value" class="mono">-</span>
+      </div>
       <div id="mode-hint" class="mode-hint" hidden></div>
       <div id="busy" class="busy" hidden><span></span></div>
     </div>
@@ -360,6 +385,26 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
           <label><input type="checkbox" id="chk-ghost"> 選択以外を半透明</label>
           <label><input type="checkbox" id="chk-xray"> 透過表示</label>
           <label><input type="checkbox" id="chk-persp" checked> 等角図を透視投影</label>
+        </div>
+        <p class="hint shade-info">AO 近似は下面・凹部側の環境光を抑えて、細かい凹凸を見やすくします。物理的な遮蔽量ではありません。</p>
+        <div class="panel-title">ライト調整</div>
+        <div class="row light-settings">
+          <label>位置 X</label><input type="number" id="in-light-x" value="1" min="-5" max="5" step="0.1">
+          <label>Y</label><input type="number" id="in-light-y" value="-1" min="-5" max="5" step="0.1">
+          <label>Z</label><input type="number" id="in-light-z" value="1" min="-5" max="5" step="0.1">
+        </div>
+        <p class="hint shade-info">位置はモデル中心からの相対値です（外形半径 = 1）。位置が照明方向になります。</p>
+        <div class="row">
+          <label>ライト強度</label><input type="range" id="in-light-strength" min="0" max="2" step="0.05" value="1">
+          <span id="light-strength-val" class="mono">1.00</span>
+        </div>
+        <div class="row">
+          <label>環境光</label><input type="range" id="in-light-ambient" min="0" max="1" step="0.05" value="0.18">
+          <span id="light-ambient-val" class="mono">0.18</span>
+        </div>
+        <div class="row">
+          <label>AO 強度</label><input type="range" id="in-ao-strength" min="0" max="1" step="0.05" value="0.55">
+          <span id="ao-strength-val" class="mono">0.55</span>
         </div>
       </section>
 
@@ -442,6 +487,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
             <option value="gyroid">ジャイロイド (等方・自己支持)</option>
           </select>
         </div>
+        <div id="hollow-infill-info" class="infill-info hint"></div>
         <div class="row">
           <label>充填率</label><input type="number" id="in-hollow-density" value="15" min="1" max="90" step="1" style="width:64px"> %
           <label>リブ厚</label><input type="number" id="in-hollow-rib" value="1" min="0.1" step="0.1" style="width:64px"> mm
@@ -2979,10 +3025,15 @@ var MESH_FS = [
   'uniform int uClipCount;',
   'uniform vec3 uColor;',
   'uniform float uOpacity;',
-  'uniform int uShadeMode;',   // 0: 単色, 1: オーバーハング, 2: 高さ
+  'uniform int uShadeMode;',   // 0: 単色, 1: オーバーハング, 2: 高さ, 3: ライト, 4: AO近似+ライト
   'uniform float uOverhangSin;',
   'uniform float uBedZ;',
   'uniform float uHeightMax;',
+  'uniform vec3 uLightPos;',
+  'uniform float uSceneRadius;',
+  'uniform float uLightStrength;',
+  'uniform float uAmbientStrength;',
+  'uniform float uAoStrength;',
   'uniform float uSelected;',
   'out vec4 fragColor;',
   'vec3 heatmap(float t){',
@@ -3010,12 +3061,24 @@ var MESH_FS = [
   '    base = heatmap((vWorld.z - uBedZ) / max(1e-3, uHeightMax));',
   '  }',
   '  if(!front) base *= 0.45;',
-  '  vec3 lightA = normalize(vec3(0.45, -0.75, 0.75));',
+  '  vec3 lightA = normalize(uLightPos - vWorld);',
   '  vec3 lightB = normalize(vec3(-0.6, 0.4, 0.35));',
   '  float dA = max(dot(n, lightA), 0.0);',
   '  float dB = max(dot(n, lightB), 0.0) * 0.35;',
   '  float amb = 0.34 + 0.16 * (n.z * 0.5 + 0.5);',
-  '  vec3 col = base * (amb + dA * 0.62 + dB);',
+  '  float light = amb + dA * 0.62 + dB;',
+  '  if(uShadeMode == 3 || uShadeMode == 4){',
+  '    float distanceAttenuation = 1.0 / (1.0 + 0.12 * length(uLightPos - vWorld) / max(uSceneRadius, 1e-3));',
+  '    light = uAmbientStrength + dA * 0.95 * distanceAttenuation + dB * 0.55;',
+  '    light *= uLightStrength;',
+  '    light += uAmbientStrength * 0.35;',
+  '  }',
+  '  if(uShadeMode == 4){',
+  '    // 深度テクスチャを使わない、下面・凹部側を強調する AO 近似',
+  '    float ambientOcclusion = 1.0 - uAoStrength * (1.0 - smoothstep(-0.35, 0.75, n.z));',
+  '    light *= ambientOcclusion;',
+  '  }',
+  '  vec3 col = base * light;',
   '  col = mix(col, vec3(1.0), uSelected * 0.12);',
   '  col = pow(col, vec3(0.4545));',
   '  fragColor = vec4(col, uOpacity);',
@@ -3717,6 +3780,19 @@ function drawScene(app, vp, mats, sb) {
   gl.uniform1f(R.mesh.u.uOverhangSin, Math.sin(app.overhangDeg * Math.PI / 180));
   gl.uniform1f(R.mesh.u.uBedZ, 0);
   gl.uniform1f(R.mesh.u.uHeightMax, sb ? Math.max(sb.max[2], 1) : 1);
+  var lightCenter = sb ? [(sb.min[0] + sb.max[0]) / 2, (sb.min[1] + sb.max[1]) / 2, (sb.min[2] + sb.max[2]) / 2]
+    : [app.bed[0] / 2, app.bed[1] / 2, app.bed[2] / 2];
+  var lightRadius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  var lightPos = [
+    lightCenter[0] + app.light.position[0] * lightRadius,
+    lightCenter[1] + app.light.position[1] * lightRadius,
+    lightCenter[2] + app.light.position[2] * lightRadius
+  ];
+  gl.uniform3fv(R.mesh.u.uLightPos, lightPos);
+  gl.uniform1f(R.mesh.u.uSceneRadius, lightRadius);
+  gl.uniform1f(R.mesh.u.uLightStrength, app.light.strength);
+  gl.uniform1f(R.mesh.u.uAmbientStrength, app.light.ambient);
+  gl.uniform1f(R.mesh.u.uAoStrength, app.light.ao);
   gl.disable(gl.CULL_FACE);
   var transparent = [];
   var i;
@@ -4679,6 +4755,50 @@ function setupControls(app) {
   $('#btn-export').addEventListener('click', function () { exportSTL(app); });
   $('#btn-report').addEventListener('click', function () { exportReport(app); });
 
+  // --- ライト / AO ---
+  function updateLightControl() {
+    app.light.position[0] = clamp(parseFloat($('#in-light-x').value) || 0, -5, 5);
+    app.light.position[1] = clamp(parseFloat($('#in-light-y').value) || 0, -5, 5);
+    app.light.position[2] = clamp(parseFloat($('#in-light-z').value) || 0, -5, 5);
+    app.light.strength = clamp(parseFloat($('#in-light-strength').value) || 0, 0, 2);
+    app.light.ambient = clamp(parseFloat($('#in-light-ambient').value) || 0, 0, 1);
+    app.light.ao = clamp(parseFloat($('#in-ao-strength').value) || 0, 0, 1);
+    $('#light-strength-val').textContent = fmt(app.light.strength, 2);
+    $('#light-ambient-val').textContent = fmt(app.light.ambient, 2);
+    $('#ao-strength-val').textContent = fmt(app.light.ao, 2);
+    requestRender(app);
+  }
+  ['#in-light-x', '#in-light-y', '#in-light-z', '#in-light-strength', '#in-light-ambient', '#in-ao-strength']
+    .forEach(function (id) { $(id).addEventListener('input', updateLightControl); });
+  updateLightControl();
+
+  // --- View 内の Z 断面 ---
+  var zSectionCheck = $('#chk-z-section');
+  var zSectionRange = $('#in-z-section');
+  zSectionCheck.addEventListener('change', function () {
+    var clip = app.clips[2];
+    clip.enabled = zSectionCheck.checked;
+    if (clip.ui) clip.ui.chk.checked = clip.enabled;
+    if (clip.enabled) app.activeClip = 2;
+    else if (app.activeClip === 2) app.activeClip = firstEnabledClip(app);
+    syncSlice(app);
+  });
+  zSectionRange.addEventListener('input', function () {
+    var clip = app.clips[2];
+    clip.value = parseFloat(zSectionRange.value) || 0;
+    updateZSectionValue(app);
+    if (zSectionCheck.checked) {
+      app.activeClip = 2;
+      requestRender(app);
+      updateClipBadge(app);
+      updateSliceSource(app);
+    }
+  });
+  zSectionRange.addEventListener('change', function () {
+    if (zSectionCheck.checked) app.activeClip = 2;
+    setClipValue(app, 2, app.clips[2].value);
+  });
+
   // --- タブ ---
   $$('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -5045,6 +5165,7 @@ function setClipValue(app, idx, v) {
     clip.ui.range.value = v;
     clip.ui.num.value = fmt(v, 2);
   }
+  if (idx === 2) updateZSectionValue(app);
   syncSlice(app);
 }
 
@@ -5065,6 +5186,7 @@ function clearClips(app) {
 // クリップ平面の状態から 3D 表示・断面輪郭・表・バッジをまとめて更新する。
 // 断面に関わる表示はすべてここを通し、状態が食い違わないようにする。
 function syncSlice(app) {
+  updateZSectionValue(app);
   if (currentClip(app)) {
     computeSlice(app);
   } else {
@@ -5167,7 +5289,32 @@ function updateClipRanges(app) {
       clip.ui.range.value = clip.value;
       clip.ui.num.value = fmt(clip.value, 2);
     }
+    if (idx === 2) {
+      var zRange = $('#in-z-section');
+      if (zRange) {
+        zRange.min = lo; zRange.max = hi;
+        zRange.step = Math.max((hi - lo) / 500, 0.01);
+        zRange.value = clip.value;
+      }
+      updateZSectionValue(app);
+    }
   });
+}
+
+function updateZSectionValue(app) {
+  var out = $('#z-section-value');
+  if (!out) return;
+  var clip = app.clips[2];
+  out.textContent = fmt(clip.value, 1) + ' mm';
+  $('#chk-z-section').checked = clip.enabled;
+  var zRange = $('#in-z-section');
+  var b = sceneBounds(app.parts, true);
+  if (zRange && b && b.max[2] > b.min[2]) {
+    zRange.min = b.min[2];
+    zRange.max = b.max[2];
+    zRange.step = Math.max((b.max[2] - b.min[2]) / 500, 0.01);
+    zRange.value = clip.value;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -5569,8 +5716,13 @@ function updateHollowPlan(app) {
   $('#hollow-target').textContent = p ? p.name : 'パーツ未選択';
   var t = $('#tbl-hollow-plan');
   t.innerHTML = '';
-  if (!p) { t.appendChild(kvRow('-', 'パーツを選択してください')); return; }
   var opt = hollowOptions(app);
+  if (!p) {
+    updateHollowInfillInfo(app, null, opt);
+    t.appendChild(kvRow('-', 'パーツを選択してください'));
+    return;
+  }
+  updateHollowInfillInfo(app, p, opt);
   var size = p.worldBounds.size;
   var h = chooseVoxelSize(size, {
     wall: opt.wall, top: opt.top, bottom: opt.bottom, rib: opt.rib,
@@ -5587,6 +5739,34 @@ function updateHollowPlan(app) {
   t.appendChild(kvRow('最小の壁', fmt(Math.min(opt.wall, opt.top, opt.bottom), 2) + ' mm / 押出 ' +
     fmt(Math.min(opt.wall, opt.top, opt.bottom) / opt.lineWidth, 1) + ' 本',
     Math.min(opt.wall, opt.top, opt.bottom) < opt.lineWidth * 2 ? 'warn' : 'ok'));
+}
+
+// 選択した内部構造を、現在の外形に対する周期と個数の概算で説明する。
+function updateHollowInfillInfo(app, part, opt) {
+  var host = $('#hollow-infill-info');
+  if (!host) return;
+  if (!part) {
+    host.textContent = 'パーツを選択すると、周期と構造数の概算を表示します。';
+    return;
+  }
+  var s = part.worldBounds.size;
+  if (opt.infill === 'none') {
+    host.textContent = 'なし: 内部リブ 0 本。壁・天面・底面だけを残した完全な中空です。';
+    return;
+  }
+  var period = infillPeriod(opt.infill, opt.rib, opt.density);
+  if (opt.infill === 'grid') {
+    var nx = Math.max(0, Math.floor(s[0] / period) + 1);
+    var ny = Math.max(0, Math.floor(s[1] / period) + 1);
+    host.textContent = '格子: 周期 約' + fmt(period, 1) + ' mm、X 方向の縦リブ 約' + nx +
+      ' 枚 + Y 方向 約' + ny + ' 枚 (概算)。';
+  } else {
+    var gx = Math.max(1, Math.ceil(s[0] / period));
+    var gy = Math.max(1, Math.ceil(s[1] / period));
+    var gz = Math.max(1, Math.ceil(s[2] / period));
+    host.textContent = 'ジャイロイド: 周期 約' + fmt(period, 1) + ' mm、' + gx + ' × ' + gy +
+      ' × ' + gz + ' = 約' + fmtInt(gx * gy * gz) + ' セル (概算)。';
+  }
 }
 
 function runHollow(app, part) {
@@ -5634,23 +5814,24 @@ function refreshHollowTable(app) {
     : '<span class="g">問題は検出されていません</span>';
 }
 
-// 中抜き結果を確認しやすいよう Y 平面で切って表示する
+// 中抜き結果を確認しやすいよう Z 平面で切って表示する
 function showHollowSection(app) {
   var p = selectedPart(app);
   if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
   var b = p.worldBounds;
-  var clip = app.clips[1];
+  var clip = app.clips[2];
   clip.enabled = true;
   clip.cap = true;
-  clip.value = (b.min[1] + b.max[1]) / 2;
+  clip.value = (b.min[2] + b.max[2]) / 2;
   if (clip.ui) {
     clip.ui.chk.checked = true;
     clip.ui.range.value = clip.value;
     clip.ui.num.value = fmt(clip.value, 2);
   }
   $('#chk-cap').checked = true;
-  setActiveClip(app, 1);
-  setStatus(app, 'Y 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
+  setActiveClip(app, 2);
+  updateZSectionValue(app);
+  setStatus(app, 'Z 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
 }
 
 // ===== 97_print.js =====
@@ -5849,7 +6030,8 @@ function createApp() {
     singleView: 'iso',
     orbitCam: makeOrbitCamera(),
     orthoCam: { center: [110, 110, 40], height: 300 },
-    shadeMode: 0,
+    shadeMode: 4,
+    light: { position: [1, -1, 1], strength: 1, ambient: 0.18, ao: 0.55 },
     showBed: true,
     showDims: true,
     showBBox: true,

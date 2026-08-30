@@ -48,8 +48,13 @@ function updateHollowPlan(app) {
   $('#hollow-target').textContent = p ? p.name : 'パーツ未選択';
   var t = $('#tbl-hollow-plan');
   t.innerHTML = '';
-  if (!p) { t.appendChild(kvRow('-', 'パーツを選択してください')); return; }
   var opt = hollowOptions(app);
+  if (!p) {
+    updateHollowInfillInfo(app, null, opt);
+    t.appendChild(kvRow('-', 'パーツを選択してください'));
+    return;
+  }
+  updateHollowInfillInfo(app, p, opt);
   var size = p.worldBounds.size;
   var h = chooseVoxelSize(size, {
     wall: opt.wall, top: opt.top, bottom: opt.bottom, rib: opt.rib,
@@ -66,6 +71,34 @@ function updateHollowPlan(app) {
   t.appendChild(kvRow('最小の壁', fmt(Math.min(opt.wall, opt.top, opt.bottom), 2) + ' mm / 押出 ' +
     fmt(Math.min(opt.wall, opt.top, opt.bottom) / opt.lineWidth, 1) + ' 本',
     Math.min(opt.wall, opt.top, opt.bottom) < opt.lineWidth * 2 ? 'warn' : 'ok'));
+}
+
+// 選択した内部構造を、現在の外形に対する周期と個数の概算で説明する。
+function updateHollowInfillInfo(app, part, opt) {
+  var host = $('#hollow-infill-info');
+  if (!host) return;
+  if (!part) {
+    host.textContent = 'パーツを選択すると、周期と構造数の概算を表示します。';
+    return;
+  }
+  var s = part.worldBounds.size;
+  if (opt.infill === 'none') {
+    host.textContent = 'なし: 内部リブ 0 本。壁・天面・底面だけを残した完全な中空です。';
+    return;
+  }
+  var period = infillPeriod(opt.infill, opt.rib, opt.density);
+  if (opt.infill === 'grid') {
+    var nx = Math.max(0, Math.floor(s[0] / period) + 1);
+    var ny = Math.max(0, Math.floor(s[1] / period) + 1);
+    host.textContent = '格子: 周期 約' + fmt(period, 1) + ' mm、X 方向の縦リブ 約' + nx +
+      ' 枚 + Y 方向 約' + ny + ' 枚 (概算)。';
+  } else {
+    var gx = Math.max(1, Math.ceil(s[0] / period));
+    var gy = Math.max(1, Math.ceil(s[1] / period));
+    var gz = Math.max(1, Math.ceil(s[2] / period));
+    host.textContent = 'ジャイロイド: 周期 約' + fmt(period, 1) + ' mm、' + gx + ' × ' + gy +
+      ' × ' + gz + ' = 約' + fmtInt(gx * gy * gz) + ' セル (概算)。';
+  }
 }
 
 function runHollow(app, part) {
@@ -113,21 +146,22 @@ function refreshHollowTable(app) {
     : '<span class="g">問題は検出されていません</span>';
 }
 
-// 中抜き結果を確認しやすいよう Y 平面で切って表示する
+// 中抜き結果を確認しやすいよう Z 平面で切って表示する
 function showHollowSection(app) {
   var p = selectedPart(app);
   if (!p) { setStatus(app, 'パーツを選択してください。'); return; }
   var b = p.worldBounds;
-  var clip = app.clips[1];
+  var clip = app.clips[2];
   clip.enabled = true;
   clip.cap = true;
-  clip.value = (b.min[1] + b.max[1]) / 2;
+  clip.value = (b.min[2] + b.max[2]) / 2;
   if (clip.ui) {
     clip.ui.chk.checked = true;
     clip.ui.range.value = clip.value;
     clip.ui.num.value = fmt(clip.value, 2);
   }
   $('#chk-cap').checked = true;
-  setActiveClip(app, 1);
-  setStatus(app, 'Y 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
+  setActiveClip(app, 2);
+  updateZSectionValue(app);
+  setStatus(app, 'Z 平面で切断して表示しています (画面下の「断面表示中」または Esc で解除できる)。');
 }

@@ -78,6 +78,50 @@ function setupControls(app) {
   $('#btn-export').addEventListener('click', function () { exportSTL(app); });
   $('#btn-report').addEventListener('click', function () { exportReport(app); });
 
+  // --- ライト / AO ---
+  function updateLightControl() {
+    app.light.position[0] = clamp(parseFloat($('#in-light-x').value) || 0, -5, 5);
+    app.light.position[1] = clamp(parseFloat($('#in-light-y').value) || 0, -5, 5);
+    app.light.position[2] = clamp(parseFloat($('#in-light-z').value) || 0, -5, 5);
+    app.light.strength = clamp(parseFloat($('#in-light-strength').value) || 0, 0, 2);
+    app.light.ambient = clamp(parseFloat($('#in-light-ambient').value) || 0, 0, 1);
+    app.light.ao = clamp(parseFloat($('#in-ao-strength').value) || 0, 0, 1);
+    $('#light-strength-val').textContent = fmt(app.light.strength, 2);
+    $('#light-ambient-val').textContent = fmt(app.light.ambient, 2);
+    $('#ao-strength-val').textContent = fmt(app.light.ao, 2);
+    requestRender(app);
+  }
+  ['#in-light-x', '#in-light-y', '#in-light-z', '#in-light-strength', '#in-light-ambient', '#in-ao-strength']
+    .forEach(function (id) { $(id).addEventListener('input', updateLightControl); });
+  updateLightControl();
+
+  // --- View 内の Z 断面 ---
+  var zSectionCheck = $('#chk-z-section');
+  var zSectionRange = $('#in-z-section');
+  zSectionCheck.addEventListener('change', function () {
+    var clip = app.clips[2];
+    clip.enabled = zSectionCheck.checked;
+    if (clip.ui) clip.ui.chk.checked = clip.enabled;
+    if (clip.enabled) app.activeClip = 2;
+    else if (app.activeClip === 2) app.activeClip = firstEnabledClip(app);
+    syncSlice(app);
+  });
+  zSectionRange.addEventListener('input', function () {
+    var clip = app.clips[2];
+    clip.value = parseFloat(zSectionRange.value) || 0;
+    updateZSectionValue(app);
+    if (zSectionCheck.checked) {
+      app.activeClip = 2;
+      requestRender(app);
+      updateClipBadge(app);
+      updateSliceSource(app);
+    }
+  });
+  zSectionRange.addEventListener('change', function () {
+    if (zSectionCheck.checked) app.activeClip = 2;
+    setClipValue(app, 2, app.clips[2].value);
+  });
+
   // --- タブ ---
   $$('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -444,6 +488,7 @@ function setClipValue(app, idx, v) {
     clip.ui.range.value = v;
     clip.ui.num.value = fmt(v, 2);
   }
+  if (idx === 2) updateZSectionValue(app);
   syncSlice(app);
 }
 
@@ -464,6 +509,7 @@ function clearClips(app) {
 // クリップ平面の状態から 3D 表示・断面輪郭・表・バッジをまとめて更新する。
 // 断面に関わる表示はすべてここを通し、状態が食い違わないようにする。
 function syncSlice(app) {
+  updateZSectionValue(app);
   if (currentClip(app)) {
     computeSlice(app);
   } else {
@@ -566,7 +612,32 @@ function updateClipRanges(app) {
       clip.ui.range.value = clip.value;
       clip.ui.num.value = fmt(clip.value, 2);
     }
+    if (idx === 2) {
+      var zRange = $('#in-z-section');
+      if (zRange) {
+        zRange.min = lo; zRange.max = hi;
+        zRange.step = Math.max((hi - lo) / 500, 0.01);
+        zRange.value = clip.value;
+      }
+      updateZSectionValue(app);
+    }
   });
+}
+
+function updateZSectionValue(app) {
+  var out = $('#z-section-value');
+  if (!out) return;
+  var clip = app.clips[2];
+  out.textContent = fmt(clip.value, 1) + ' mm';
+  $('#chk-z-section').checked = clip.enabled;
+  var zRange = $('#in-z-section');
+  var b = sceneBounds(app.parts, true);
+  if (zRange && b && b.max[2] > b.min[2]) {
+    zRange.min = b.min[2];
+    zRange.max = b.max[2];
+    zRange.step = Math.max((b.max[2] - b.min[2]) / 500, 0.01);
+    zRange.value = clip.value;
+  }
 }
 
 // ---------------------------------------------------------------------------
