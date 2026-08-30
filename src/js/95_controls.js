@@ -221,6 +221,7 @@ function setupControls(app) {
     $('#sel-component').value = '';
     requestRender(app);
   });
+  $('#btn-component-add').addEventListener('click', function () { addSelectedComponent(app); });
   $('#btn-component-export').addEventListener('click', function () { exportSelectedComponent(app); });
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;

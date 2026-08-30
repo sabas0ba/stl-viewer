@@ -171,7 +171,8 @@ table.kv td:last-child { text-align: right; font-family: var(--mono); }
 table.kv tr.warn td:last-child { color: var(--warn); }
 table.kv tr.ok td:last-child { color: var(--ok); }
 table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
-.component-action { margin-left: 4px; padding: 2px 5px !important; font-size: 10px !important; }
+.component-select-button { min-width: 32px; padding: 2px 5px !important; font-size: 10px !important; font-family: var(--mono); }
+.component-select-button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {
@@ -345,6 +346,7 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
         <div class="row">
           <select id="sel-component"><option value="">すべて表示</option></select>
           <button class="btn sm" id="btn-component-all">すべて表示</button>
+          <button class="btn sm" id="btn-component-add">選択成分をパーツに追加</button>
           <button class="btn sm" id="btn-component-export">選択成分を STL 保存</button>
         </div>
         <table class="kv" id="tbl-components"></table>
@@ -4531,23 +4533,32 @@ function refreshQuality(app) {
   if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
   components.forEach(function (c) {
     var tr = el('tr', { class: c.floating ? 'warn' : '' });
-    tr.appendChild(el('td', { text: 'C' + c.id }));
-    var info = el('td', {});
-    info.appendChild(document.createTextNode(fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
-      (c.floating ? ' / 浮遊 ' : ' / 接地 ')));
-    var toggle = el('button', { class: 'btn sm component-action', text: app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id ? '解除' : '単一表示' });
-    toggle.addEventListener('click', function () {
-      if (app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id) {
-        app.componentFocus = null; cs.value = '';
-      } else {
-        app.componentFocus = { partId: p.id, componentId: c.id }; cs.value = String(c.id);
-      }
+    var isFocused = app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id;
+    var select = el('button', { class: 'btn sm component-select-button' + (isFocused ? ' active' : ''), text: 'C' + c.id });
+    select.title = 'この成分だけを表示';
+    select.addEventListener('click', function () {
+      app.componentFocus = { partId: p.id, componentId: c.id };
       refreshQuality(app); requestRender(app);
     });
-    var add = el('button', { class: 'btn sm component-action', text: 'パーツに追加' });
-    add.addEventListener('click', function () { addComponentPart(app, p, c); });
-    info.appendChild(toggle); info.appendChild(add); tr.appendChild(info); ct.appendChild(tr);
+    var idCell = el('td', {});
+    idCell.appendChild(select);
+    tr.appendChild(idCell);
+    tr.appendChild(el('td', { text: fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ') }));
+    ct.appendChild(tr);
   });
+}
+
+function selectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) return null;
+  return (p.components || []).filter(function (c) { return c.id === focus.componentId; })[0] || null;
+}
+
+function addSelectedComponent(app) {
+  var p = selectedPart(app), c = selectedComponent(app);
+  if (!p || !c) { setStatus(app, '追加する成分を選択してください。'); return; }
+  addComponentPart(app, p, c);
 }
 
 function addComponentPart(app, source, component) {
@@ -5092,6 +5103,7 @@ function setupControls(app) {
     $('#sel-component').value = '';
     requestRender(app);
   });
+  $('#btn-component-add').addEventListener('click', function () { addSelectedComponent(app); });
   $('#btn-component-export').addEventListener('click', function () { exportSelectedComponent(app); });
   $('#chk-persp').addEventListener('change', function (ev) {
     app.orbitCam.persp = ev.target.checked;

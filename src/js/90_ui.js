@@ -223,23 +223,32 @@ function refreshQuality(app) {
   if (!components.length) ct.appendChild(kvRow('-', '解析できませんでした'));
   components.forEach(function (c) {
     var tr = el('tr', { class: c.floating ? 'warn' : '' });
-    tr.appendChild(el('td', { text: 'C' + c.id }));
-    var info = el('td', {});
-    info.appendChild(document.createTextNode(fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
-      (c.floating ? ' / 浮遊 ' : ' / 接地 ')));
-    var toggle = el('button', { class: 'btn sm component-action', text: app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id ? '解除' : '単一表示' });
-    toggle.addEventListener('click', function () {
-      if (app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id) {
-        app.componentFocus = null; cs.value = '';
-      } else {
-        app.componentFocus = { partId: p.id, componentId: c.id }; cs.value = String(c.id);
-      }
+    var isFocused = app.componentFocus && app.componentFocus.partId === p.id && app.componentFocus.componentId === c.id;
+    var select = el('button', { class: 'btn sm component-select-button' + (isFocused ? ' active' : ''), text: 'C' + c.id });
+    select.title = 'この成分だけを表示';
+    select.addEventListener('click', function () {
+      app.componentFocus = { partId: p.id, componentId: c.id };
       refreshQuality(app); requestRender(app);
     });
-    var add = el('button', { class: 'btn sm component-action', text: 'パーツに追加' });
-    add.addEventListener('click', function () { addComponentPart(app, p, c); });
-    info.appendChild(toggle); info.appendChild(add); tr.appendChild(info); ct.appendChild(tr);
+    var idCell = el('td', {});
+    idCell.appendChild(select);
+    tr.appendChild(idCell);
+    tr.appendChild(el('td', { text: fmtInt(c.triangleCount) + ' 三角形 / Z=' + fmt(c.worldBounds.min[2], 2) + ' mm' +
+      (c.floating ? ' / 浮遊 ' : ' / 接地 ') }));
+    ct.appendChild(tr);
   });
+}
+
+function selectedComponent(app) {
+  var p = selectedPart(app), focus = app.componentFocus;
+  if (!p || !focus || focus.partId !== p.id) return null;
+  return (p.components || []).filter(function (c) { return c.id === focus.componentId; })[0] || null;
+}
+
+function addSelectedComponent(app) {
+  var p = selectedPart(app), c = selectedComponent(app);
+  if (!p || !c) { setStatus(app, '追加する成分を選択してください。'); return; }
+  addComponentPart(app, p, c);
 }
 
 function addComponentPart(app, source, component) {

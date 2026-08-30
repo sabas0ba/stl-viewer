@@ -161,7 +161,8 @@ table.kv td:last-child { text-align: right; font-family: var(--mono); }
 table.kv tr.warn td:last-child { color: var(--warn); }
 table.kv tr.ok td:last-child { color: var(--ok); }
 table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); padding-top: 5px; }
-.component-action { margin-left: 4px; padding: 2px 5px !important; font-size: 10px !important; }
+.component-select-button { min-width: 32px; padding: 2px 5px !important; font-size: 10px !important; font-family: var(--mono); }
+.component-select-button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 
 .tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
 .tab {
