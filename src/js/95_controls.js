@@ -600,7 +600,11 @@ function buildClipControls(app) {
 
 function updateClipRanges(app) {
   var b = sceneBounds(app.parts, true);
-  if (!b) b = { min: [0, 0, 0], max: app.bed.slice() };
+  var hasSceneBounds = !!b;
+  if (!b) {
+    app.zClipInitialized = false;
+    b = { min: [0, 0, 0], max: app.bed.slice() };
+  }
   app.clips.forEach(function (clip, idx) {
     if (!clip.ui) return;
     var lo = b.min[idx], hi = b.max[idx];
@@ -608,7 +612,12 @@ function updateClipRanges(app) {
     clip.ui.range.min = lo;
     clip.ui.range.max = hi;
     clip.ui.range.step = Math.max((hi - lo) / 500, 0.01);
-    if (clip.value < lo || clip.value > hi) {
+    if (idx === 2 && hasSceneBounds && !app.zClipInitialized) {
+      clip.value = (lo + hi) / 2;
+      app.zClipInitialized = true;
+      clip.ui.range.value = clip.value;
+      clip.ui.num.value = fmt(clip.value, 2);
+    } else if (clip.value < lo || clip.value > hi) {
       clip.value = (lo + hi) / 2;
       clip.ui.range.value = clip.value;
       clip.ui.num.value = fmt(clip.value, 2);

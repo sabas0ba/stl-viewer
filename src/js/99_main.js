@@ -28,6 +28,7 @@ function createApp() {
       { axis: 1, enabled: false, value: 0, invert: false, cap: true },
       { axis: 2, enabled: false, value: 0, invert: false, cap: true }
     ],
+    zClipInitialized: false,
     // 断面輪郭・断面図面が参照するクリップ平面の番号 (-1 は断面なし)
     activeClip: -1,
     measure: { points: [] },
