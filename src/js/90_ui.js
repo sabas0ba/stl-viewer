@@ -351,6 +351,17 @@ function viewportAt(app, cssX, cssY) {
   return vps[0];
 }
 
+function zoomAt(app, vp, factor, fromX, fromY, toX, toY) {
+  var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+  var before = pointOnFocalPlane(app, vp, fromX, fromY);
+  cam.height = clamp(cam.height * factor, 0.5, 200000);
+  var after = pointOnFocalPlane(app, vp, toX, toY);
+  if (before && after) {
+    for (var k = 0; k < 3; k++) cam.center[k] += before[k] - after[k];
+  }
+  requestRender(app);
+}
+
 function setupCanvasInteraction(app) {
   var canvas = app.R.canvas;
   var drag = null;
@@ -362,7 +373,11 @@ function setupCanvasInteraction(app) {
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     if (pointers.size === 2) {
       var pts = Array.from(pointers.values());
-      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
+      var rect = canvas.getBoundingClientRect();
+      var x = (pts[0].x + pts[1].x) / 2 - rect.left;
+      var y = (pts[0].y + pts[1].y) / 2 - rect.top;
+      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), x: x, y: y,
+        vp: viewportAt(app, x, y) };
       drag = null;
       return;
     }
@@ -377,13 +392,14 @@ function setupCanvasInteraction(app) {
     if (pinch && pointers.size === 2) {
       var pts = Array.from(pointers.values());
       var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      var rect = canvas.getBoundingClientRect();
+      var x = (pts[0].x + pts[1].x) / 2 - rect.left;
+      var y = (pts[0].y + pts[1].y) / 2 - rect.top;
       if (pinch.dist > 0) {
-        var f = pinch.dist / Math.max(1, d);
-        app.orthoCam.height = clamp(app.orthoCam.height * f, 1, 100000);
-        app.orbitCam.height = clamp(app.orbitCam.height * f, 1, 100000);
-        requestRender(app);
+        zoomAt(app, pinch.vp, pinch.dist / Math.max(1, d), pinch.x, pinch.y, x, y);
       }
       pinch.dist = d;
+      pinch.x = x; pinch.y = y;
       return;
     }
     if (!drag) return;
@@ -426,17 +442,23 @@ function setupCanvasInteraction(app) {
   canvas.addEventListener('wheel', function (ev) {
     ev.preventDefault();
     var rect = canvas.getBoundingClientRect();
-    var vp = viewportAt(app, ev.clientX - rect.left, ev.clientY - rect.top);
-    var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+    var x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    var vp = viewportAt(app, x, y);
     var factor = Math.exp(clamp(ev.deltaY, -120, 120) * 0.0016);
-    var before = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
-    cam.height = clamp(cam.height * factor, 0.5, 200000);
-    var after = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
-    if (before && after) {
-      for (var k = 0; k < 3; k++) cam.center[k] += before[k] - after[k];
-    }
-    requestRender(app);
+    zoomAt(app, vp, factor, x, y, x, y);
   }, { passive: false });
+
+  function zoomFromButton(factor) {
+    var vps = computeViewports(app, canvas.width, canvas.height);
+    var vp = vps[0];
+    for (var i = 0; i < vps.length; i++) if (vps[i].kind === 'orbit') vp = vps[i];
+    var x = (vp.rect.x + vp.rect.w / 2) / app.R.dpr;
+    var y = (canvas.height - vp.rect.y - vp.rect.h / 2) / app.R.dpr;
+    zoomAt(app, vp, factor, x, y, x, y);
+  }
+  $('#btn-zoom-in').addEventListener('click', function () { zoomFromButton(0.8); });
+  $('#btn-zoom-out').addEventListener('click', function () { zoomFromButton(1.25); });
+  $('#btn-zoom-fit').addEventListener('click', function () { fitView(app); });
 
   // ダブルクリックで注視点を移動
   canvas.addEventListener('dblclick', function (ev) {
@@ -451,16 +473,14 @@ function setupCanvasInteraction(app) {
 
 // カーソル位置のワールド座標 (注視点を通る視線直交平面との交点)
 function pointOnFocalPlane(app, vp, cssX, cssY) {
-  if (!app.lastViewports) return null;
-  var entry = null;
-  for (var i = 0; i < app.lastViewports.length; i++) {
-    if (app.lastViewports[i].vp.key === vp.key) entry = app.lastViewports[i];
-  }
-  if (!entry) return null;
   var dpr = app.R.dpr, H = app.R.canvas.height;
-  var ray = screenToRay(entry.mats, entry.vp.rect, H, cssX * dpr, cssY * dpr);
-  if (!ray) return null;
+  var sb = sceneBounds(app.parts, true);
+  var radius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  if (app.showBed) radius = Math.max(radius, V3.len([app.bed[0], app.bed[1], app.bed[2]]) / 2);
   var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+  var mats = buildViewMatrices(vp, cam, radius);
+  var ray = screenToRay(mats, vp.rect, H, cssX * dpr, cssY * dpr);
+  if (!ray) return null;
   var n;
   if (vp.kind === 'ortho') n = VIEW_DIRS[vp.key].dir;
   else n = V3.scale([0, 0, 0], orbitAxes(cam).fwd, -1);
