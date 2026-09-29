@@ -3301,7 +3301,8 @@ function buildViewMatrices(vp, cam, sceneRadius) {
   var dist = R * 6 + 100;
   if (vp.kind === 'orbit' && cam.persp) {
     // 透視投影では注視点での見かけの高さが cam.height になる距離を用いる
-    dist = Math.max((cam.height / 2) / Math.tan(cam.fov / 2), R * 1.2 + 10);
+    // ステージ全体の半径で距離を固定すると、小さいモデルの拡大操作が見た目に反映されない
+    dist = Math.max((cam.height / 2) / Math.tan(cam.fov / 2), 1);
   }
   if (vp.kind === 'ortho') {
     var d = VIEW_DIRS[vp.key];
