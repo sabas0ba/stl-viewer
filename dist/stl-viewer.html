@@ -72,6 +72,13 @@ aside {
 #z-section-value { min-width: 62px; text-align: right; color: var(--fg-dim); font-size: 11px; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#zoom-controls {
+  position: absolute; top: 12px; right: 12px; z-index: 2;
+  display: flex; gap: 4px; padding: 4px;
+  background: rgba(20, 24, 31, .92); border: 1px solid var(--line); border-radius: 5px;
+}
+#zoom-controls .btn { min-width: 36px; min-height: 36px; padding: 5px 8px; font-size: 16px; }
+#zoom-controls #btn-zoom-fit { font-size: 12px; }
 
 button.btn.bar-toggle {
   position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center;
@@ -314,6 +321,11 @@ table.kv tr.sec td { color: var(--fg); border-top: 1px solid var(--line); paddin
     <div id="viewport">
       <canvas id="gl"></canvas>
       <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="zoom-controls" role="group" aria-label="表示の拡大縮小">
+        <button class="btn" id="btn-zoom-in" type="button" aria-label="拡大" title="拡大">＋</button>
+        <button class="btn" id="btn-zoom-out" type="button" aria-label="縮小" title="縮小">−</button>
+        <button class="btn" id="btn-zoom-fit" type="button" title="全体表示">全体</button>
+      </div>
       <div id="z-section-control" class="viewport-control">
         <label><input type="checkbox" id="chk-z-section"> Z 断面</label>
         <input type="range" id="in-z-section" min="0" max="1" step="0.1" value="0.5" aria-label="Z 断面位置">
@@ -3289,7 +3301,8 @@ function buildViewMatrices(vp, cam, sceneRadius) {
   var dist = R * 6 + 100;
   if (vp.kind === 'orbit' && cam.persp) {
     // 透視投影では注視点での見かけの高さが cam.height になる距離を用いる
-    dist = Math.max((cam.height / 2) / Math.tan(cam.fov / 2), R * 1.2 + 10);
+    // ステージ全体の半径で距離を固定すると、小さいモデルの拡大操作が見た目に反映されない
+    dist = Math.max((cam.height / 2) / Math.tan(cam.fov / 2), 1);
   }
   if (vp.kind === 'ortho') {
     var d = VIEW_DIRS[vp.key];
@@ -4660,6 +4673,17 @@ function viewportAt(app, cssX, cssY) {
   return vps[0];
 }
 
+function zoomAt(app, vp, factor, fromX, fromY, toX, toY) {
+  var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+  var before = pointOnFocalPlane(app, vp, fromX, fromY);
+  cam.height = clamp(cam.height * factor, 0.5, 200000);
+  var after = pointOnFocalPlane(app, vp, toX, toY);
+  if (before && after) {
+    for (var k = 0; k < 3; k++) cam.center[k] += before[k] - after[k];
+  }
+  requestRender(app);
+}
+
 function setupCanvasInteraction(app) {
   var canvas = app.R.canvas;
   var drag = null;
@@ -4671,7 +4695,11 @@ function setupCanvasInteraction(app) {
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     if (pointers.size === 2) {
       var pts = Array.from(pointers.values());
-      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
+      var rect = canvas.getBoundingClientRect();
+      var x = (pts[0].x + pts[1].x) / 2 - rect.left;
+      var y = (pts[0].y + pts[1].y) / 2 - rect.top;
+      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), x: x, y: y,
+        vp: viewportAt(app, x, y) };
       drag = null;
       return;
     }
@@ -4686,13 +4714,14 @@ function setupCanvasInteraction(app) {
     if (pinch && pointers.size === 2) {
       var pts = Array.from(pointers.values());
       var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      var rect = canvas.getBoundingClientRect();
+      var x = (pts[0].x + pts[1].x) / 2 - rect.left;
+      var y = (pts[0].y + pts[1].y) / 2 - rect.top;
       if (pinch.dist > 0) {
-        var f = pinch.dist / Math.max(1, d);
-        app.orthoCam.height = clamp(app.orthoCam.height * f, 1, 100000);
-        app.orbitCam.height = clamp(app.orbitCam.height * f, 1, 100000);
-        requestRender(app);
+        zoomAt(app, pinch.vp, pinch.dist / Math.max(1, d), pinch.x, pinch.y, x, y);
       }
       pinch.dist = d;
+      pinch.x = x; pinch.y = y;
       return;
     }
     if (!drag) return;
@@ -4735,17 +4764,23 @@ function setupCanvasInteraction(app) {
   canvas.addEventListener('wheel', function (ev) {
     ev.preventDefault();
     var rect = canvas.getBoundingClientRect();
-    var vp = viewportAt(app, ev.clientX - rect.left, ev.clientY - rect.top);
-    var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+    var x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    var vp = viewportAt(app, x, y);
     var factor = Math.exp(clamp(ev.deltaY, -120, 120) * 0.0016);
-    var before = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
-    cam.height = clamp(cam.height * factor, 0.5, 200000);
-    var after = pointOnFocalPlane(app, vp, ev.clientX - rect.left, ev.clientY - rect.top);
-    if (before && after) {
-      for (var k = 0; k < 3; k++) cam.center[k] += before[k] - after[k];
-    }
-    requestRender(app);
+    zoomAt(app, vp, factor, x, y, x, y);
   }, { passive: false });
+
+  function zoomFromButton(factor) {
+    var vps = computeViewports(app, canvas.width, canvas.height);
+    var vp = vps[0];
+    for (var i = 0; i < vps.length; i++) if (vps[i].kind === 'orbit') vp = vps[i];
+    var x = (vp.rect.x + vp.rect.w / 2) / app.R.dpr;
+    var y = (canvas.height - vp.rect.y - vp.rect.h / 2) / app.R.dpr;
+    zoomAt(app, vp, factor, x, y, x, y);
+  }
+  $('#btn-zoom-in').addEventListener('click', function () { zoomFromButton(0.8); });
+  $('#btn-zoom-out').addEventListener('click', function () { zoomFromButton(1.25); });
+  $('#btn-zoom-fit').addEventListener('click', function () { fitView(app); });
 
   // ダブルクリックで注視点を移動
   canvas.addEventListener('dblclick', function (ev) {
@@ -4760,16 +4795,14 @@ function setupCanvasInteraction(app) {
 
 // カーソル位置のワールド座標 (注視点を通る視線直交平面との交点)
 function pointOnFocalPlane(app, vp, cssX, cssY) {
-  if (!app.lastViewports) return null;
-  var entry = null;
-  for (var i = 0; i < app.lastViewports.length; i++) {
-    if (app.lastViewports[i].vp.key === vp.key) entry = app.lastViewports[i];
-  }
-  if (!entry) return null;
   var dpr = app.R.dpr, H = app.R.canvas.height;
-  var ray = screenToRay(entry.mats, entry.vp.rect, H, cssX * dpr, cssY * dpr);
-  if (!ray) return null;
+  var sb = sceneBounds(app.parts, true);
+  var radius = sb ? Math.max(V3.len(sb.size) / 2, 20) : Math.max(app.bed[0], app.bed[1]) / 2;
+  if (app.showBed) radius = Math.max(radius, V3.len([app.bed[0], app.bed[1], app.bed[2]]) / 2);
   var cam = vp.kind === 'orbit' ? app.orbitCam : app.orthoCam;
+  var mats = buildViewMatrices(vp, cam, radius);
+  var ray = screenToRay(mats, vp.rect, H, cssX * dpr, cssY * dpr);
+  if (!ray) return null;
   var n;
   if (vp.kind === 'ortho') n = VIEW_DIRS[vp.key].dir;
   else n = V3.scale([0, 0, 0], orbitAxes(cam).fwd, -1);

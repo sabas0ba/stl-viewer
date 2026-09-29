@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const jsDir = join(root, 'src', 'js');
-const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|35|40|42|70|85)_/.test(f)).sort();
+const files = readdirSync(jsDir).filter((f) => /^(00|10|20|30|35|40|42|60|70|85)_/.test(f)).sort();
 const src = files.map((f) => readFileSync(join(jsDir, f), 'utf8')).join('\n');
 
 const ctx = vm.createContext({ console, TextDecoder, Map, Set });
@@ -61,6 +61,23 @@ test('Quat: fromUnitVectors が始点を終点に写す', () => {
   const to = [0, 0, -1];
   const r = G.Quat.rotate(G.Quat.fromUnitVectors(from, to), from);
   for (let i = 0; i < 3; i++) assert.ok(Math.abs(r[i] - to[i]) < 1e-6);
+});
+
+test('透視投影: 造形エリアが大きくても表示倍率が画面上の幅に反映される', () => {
+  const cam = G.makeOrbitCamera();
+  cam.height = 80;
+  const vp = { kind: 'orbit', key: 'iso', rect: { x: 0, y: 0, w: 600, h: 400 } };
+  const right = G.orbitAxes(cam).right;
+  const point = (offset) => cam.center.map((c, i) => c + right[i] * offset);
+  const screenWidth = () => {
+    const mats = G.buildViewMatrices(vp, cam, 200);
+    const a = G.projectToScreen(mats.vp, vp.rect, 400, point(-5));
+    const b = G.projectToScreen(mats.vp, vp.rect, 400, point(5));
+    return Math.hypot(b[0] - a[0], b[1] - a[1]);
+  };
+  assert.ok(Math.abs(screenWidth() - 50) < 1e-3);
+  cam.height = 40;
+  assert.ok(Math.abs(screenWidth() - 100) < 1e-3);
 });
 
 test('質量特性: 10mm 立方体で体積 1000 / 表面積 600', () => {

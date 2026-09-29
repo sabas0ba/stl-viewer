@@ -120,6 +120,70 @@ check('中空箱は水密で 2 シェル', hollow.watertight && hollow.shells ==
 check('中空箱の外形が 30mm 立方', Math.abs(hollow.size[0] - 30) < 1e-3 && Math.abs(hollow.size[2] - 30) < 1e-3, JSON.stringify(hollow.size));
 check('読み込み時にベッド面へ接地する', Math.abs(hollow.minZ) < 1e-4 && Math.abs(bracket.minZ) < 1e-4, `${hollow.minZ}, ${bracket.minZ}`);
 
+// --- ズーム操作 ---
+const zoomHeight = () => page.evaluate(() => window.__stlViewer.app.orbitCam.height);
+const projectedWidth = () => page.evaluate(() => {
+  const V = window.__stlViewer, a = V.app, e = a.lastViewports[0];
+  const c = a.orbitCam.center;
+  const p = V.projectToScreen(e.mats.vp, e.vp.rect, a.R.canvas.height, [c[0] - 5, c[1], c[2]]);
+  const q = V.projectToScreen(e.mats.vp, e.vp.rect, a.R.canvas.height, [c[0] + 5, c[1], c[2]]);
+  return Math.hypot(q[0] - p[0], q[1] - p[1]);
+});
+const fittedHeight = await zoomHeight();
+await page.waitForTimeout(100);
+const fittedWidth = await projectedWidth();
+await page.click('#btn-zoom-in');
+check('拡大ボタンでカメラの表示範囲が狭まる', (await zoomHeight()) < fittedHeight);
+await page.waitForTimeout(100);
+check('拡大ボタンで実際の描画サイズも大きくなる', (await projectedWidth()) > fittedWidth * 1.1);
+await page.click('#btn-zoom-out');
+check('縮小ボタンで元の表示範囲に戻る', Math.abs((await zoomHeight()) - fittedHeight) < 1e-6);
+const canvasBox = await page.locator('#gl').boundingBox();
+await page.mouse.move(canvasBox.x + canvasBox.width * 0.6, canvasBox.y + canvasBox.height * 0.5);
+await page.mouse.wheel(0, -120);
+check('PC のホイールで拡大できる', (await zoomHeight()) < fittedHeight);
+await page.click('#btn-zoom-fit');
+check('画面内の全体表示ボタンで倍率を戻せる', Math.abs((await zoomHeight()) - fittedHeight) < 1e-6);
+
+const touch = await page.context().newCDPSession(page);
+const tx = canvasBox.x + canvasBox.width * 0.5, ty = canvasBox.y + canvasBox.height * 0.5;
+await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
+  { x: tx - 30, y: ty, id: 1 }, { x: tx + 30, y: ty, id: 2 }
+] });
+await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [
+  { x: tx - 60, y: ty, id: 1 }, { x: tx + 60, y: ty, id: 2 }
+] });
+await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+check('スマホのピンチ操作で拡大できる', (await zoomHeight()) < fittedHeight);
+await page.waitForTimeout(100);
+check('ピンチで実際の描画サイズも大きくなる', (await projectedWidth()) > fittedWidth * 1.5);
+await page.click('#btn-zoom-fit');
+
+const centerBeforePan = await page.evaluate(() => window.__stlViewer.app.orbitCam.center.slice());
+await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [
+  { x: tx - 30, y: ty, id: 3 }, { x: tx + 30, y: ty, id: 4 }
+] });
+await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [
+  { x: tx, y: ty + 20, id: 3 }, { x: tx + 60, y: ty + 20, id: 4 }
+] });
+await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+const panState = await page.evaluate(() => ({ center: window.__stlViewer.app.orbitCam.center.slice(), height: window.__stlViewer.app.orbitCam.height }));
+check('2 本指のドラッグで倍率を変えずに平行移動できる',
+  panState.center.some((v, i) => Math.abs(v - centerBeforePan[i]) > 0.1) && Math.abs(panState.height - fittedHeight) < 1e-6,
+  JSON.stringify(panState));
+await page.click('#btn-zoom-fit');
+
+await page.setViewportSize({ width: 390, height: 844 });
+const zoomButtons = await page.evaluate(() => {
+  const r = document.querySelector('#zoom-controls').getBoundingClientRect();
+  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, viewport: document.querySelector('#viewport').getBoundingClientRect().bottom };
+});
+check('スマホ幅でもズームボタンが表示領域内に収まる',
+  zoomButtons.left >= 0 && zoomButtons.right <= 390 && zoomButtons.top >= 0 && zoomButtons.bottom <= zoomButtons.viewport,
+  JSON.stringify(zoomButtons));
+await page.screenshot({ path: join(shots, '01-mobile-zoom.png') });
+await page.setViewportSize({ width: 1440, height: 900 });
+
 const dimText = await page.textContent('#tbl-dims');
 check('寸法表に X/Y/Z が出る', /X 幅/.test(dimText) && /Z 高さ/.test(dimText));
 
